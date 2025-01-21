@@ -1,15 +1,19 @@
 x-app:
   name: nextcloud
   title: Nextcloud
-  description: |
-    With over 400.000 deployments, Nextcloud is the most popular on-premises content collaboration platform you can download. 
+  description: >
+    With over 400.000 deployments, Nextcloud is the most popular on-premises
+    content collaboration platform you can download. 
+
     It scales from a Raspberry Pi with 2 users to globally distributed installations with tens of millions of users at major hosting providers.
   url: https://nextcloud.com/
   category: office
   icon: nextcloud.png
-  author: Koen Swings  # Who created this compose file? (not the app ;-)
+  author: Koen Swings
+  version: e94f22caf95bc22a0b6c583fed2840a054b87b4f
+  instanceName: nextcloud
 networks:
-  backend:
+  backend: null
 services:
   nextcloud-app:
     image: nextcloud
@@ -17,6 +21,8 @@ services:
     pull_policy: never
     volumes:
       - ./data/nextcloud:/var/www/html
+    ports:
+      - ${port}:80
     environment:
       - MYSQL_PASSWORD=admin911!
       - MYSQL_DATABASE=nextcloud
@@ -24,15 +30,16 @@ services:
       - MYSQL_HOST=nextcloud-db
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
+    networks:
+      - backend
   nextcloud-db:
     image: mariadb
     restart: no
     pull_policy: never
-    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+      --innodb-file-per-table=1 --skip-innodb-read-only-compressed
     volumes:
-      - ./data/nextcloud:/var/lib/mysql
-    ports:
-      - ${port}:80
+      - ./data/db:/var/lib/mysql
     environment:
       - MYSQL_ROOT_PASSWORD=admin911!
       - MYSQL_PASSWORD=admin911!
@@ -46,15 +53,9 @@ services:
     pull_policy: never
     ports:
       - 9980:9980
-    #security_opt:
-    #  - seccomp:unconfined
-    #cap_add:
-    #  - MKNOD
-    #  - SYS_CHROOT
-    #  - FOWNER
     environment:
       - extra_params=--o:ssl.enable=false
     extra_hosts:
-      - "nextcloud.boringeinstein.net:172.17.0.1"
+      - nostalgic-lederberg.local:192.168.1.150
     networks:
       - backend
