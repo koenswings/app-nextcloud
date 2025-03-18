@@ -10,13 +10,14 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: e94f22caf95bc22a0b6c583fed2840a054b87b4f
+  version: 6900555403c84463e2c8ac53e49cc9c08536669e
   instanceName: nextcloud
 networks:
   backend: null
 services:
   nextcloud-app:
-    image: nextcloud
+    #image: nextcloud
+    image: koenswings/nextcloud:1.0-31.0.1
     restart: no
     pull_policy: never
     volumes:
@@ -33,7 +34,8 @@ services:
     networks:
       - backend
   nextcloud-db:
-    image: mariadb
+    #image: mariadb
+    image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -48,7 +50,8 @@ services:
     networks:
       - backend
   code:
-    image: collabora/code
+    #image: collabora/code
+    image: koenswings/nextcloud-code:1.0-24.04.13.2
     restart: no
     pull_policy: never
     ports:
@@ -56,7 +59,6 @@ services:
     environment:
       - extra_params=--o:ssl.enable=false
     extra_hosts:
-      #- nostalgic-lederberg.local:192.168.1.150
       - ${hostname}.local:${ip}
     networks:
       - backend
