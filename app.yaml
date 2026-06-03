@@ -1,0 +1,40 @@
+app: nextcloud
+idea_app_version: "1.0"
+
+compatibility:
+  engine_min: "0.9.0"
+  engine_tested: "unknown"
+
+services:
+  - name: nextcloud-app
+    build: retag
+    upstream: nextcloud
+    upstream_tag: "31-apache"
+    image: koenswings/nextcloud
+    current_version: "1.0-31.0.1"
+    monitors:
+      - kind: dockerhub
+        repo: library/nextcloud
+        tag_pattern: "^\\d+-apache$"
+
+  - name: nextcloud-db
+    build: retag
+    upstream: mariadb
+    upstream_tag: "11.7"
+    image: koenswings/nextcloud-mariadb
+    current_version: "1.0-11.7.2-MariaDB-ubu2404"
+    monitors:
+      - kind: dockerhub
+        repo: library/mariadb
+        tag_pattern: "^11\\.\\d+$"
+
+  - name: nextcloud-code
+    build: retag
+    upstream: collabora/code
+    upstream_tag: "24.04.13.2"
+    image: koenswings/nextcloud-code
+    current_version: "1.0-24.04.13.2"
+    monitors:
+      - kind: dockerhub
+        repo: collabora/code
+        tag_pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
