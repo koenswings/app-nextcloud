@@ -32,4 +32,8 @@ if [ -d "$IDEA_FILES_ROOT" ]; then
 	done
 fi
 
+# Compose entrypoint override drops image CMD; default like the official image.
+if [ "$#" -eq 0 ]; then
+	set -- apache2-foreground
+fi
 exec "$IDEA_ENTRYPOINT" "$@"
