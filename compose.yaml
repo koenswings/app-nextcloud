@@ -12,6 +12,9 @@ x-app:
   author: Koen Swings
   version: 6900555403c84463e2c8ac53e49cc9c08536669e
   instanceName: nextcloud
+  filesMount:
+    path: /mnt/idea-files
+    services: [nextcloud-app]
 networks:
   backend: null
 services:
@@ -20,8 +23,15 @@ services:
     image: koenswings/nextcloud:1.0-31.0.1
     restart: no
     pull_policy: never
+    # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
+    # Hook reconciles Local external storages with Files Disk folders (idea#137).
+    entrypoint: ["/idea-files-entrypoint.sh"]
+    # Image CMD is dropped when entrypoint is overridden — restore it.
+    command: ["apache2-foreground"]
     volumes:
       - ./data/nextcloud:/var/www/html
+      - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
+      - ./docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:/docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:ro
     ports:
       - ${port}:80
     environment:

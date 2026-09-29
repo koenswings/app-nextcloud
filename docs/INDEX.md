@@ -6,4 +6,6 @@ For organization-wide documentation guidance, see [`koenswings/idea/docs/INDEX.m
 
 Update this file whenever an authoritative doc is added or significantly revised.
 
-No authoritative documentation is present in this repository’s `docs/` directory yet.
+| Doc | Purpose |
+|-----|---------|
+| [files-disk.md](./files-disk.md) | Files Disk opt-in (`x-app.filesMount`), entrypoint wrapper, before-starting hook (idea#137) |
