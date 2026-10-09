@@ -32,6 +32,8 @@ services:
       - ./data/nextcloud:/var/www/html
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
       - ./docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:/docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:ro
+      # Sets trusted_domains for the Pi it runs on, on every start (agent-engine-dev#163)
+      - ./docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:/docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:ro
     ports:
       - ${port}:80
     environment:
@@ -41,6 +43,9 @@ services:
       - MYSQL_HOST=nextcloud-db
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
+      # Written into the instance .env by the Engine on every start; empty with an older Engine (hook then does nothing)
+      - IDEA_HOSTNAME=${IDEA_HOSTNAME:-}
+      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-}
     networks:
       - backend
   nextcloud-db:
