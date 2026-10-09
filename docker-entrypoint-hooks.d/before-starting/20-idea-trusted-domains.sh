@@ -23,8 +23,15 @@
 #   - Fail open: with both vars empty, or when occ does not answer, the config is
 #     left untouched and the hook exits 0 (a hook failure would stop Nextcloud).
 #   - Never empties trusted_domains: entries are set by index, then only the
-#     stale tail is deleted.
+#     stale tail is deleted, highest index first (occ's delete leaves a gap).
+#   - The old install-time entry (e.g. idea01:18280, host:port) was not written
+#     by this hook, so it stays as a kept entry after the hook's own.
+#   - IDEA_HOSTNAME must match ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$, else it
+#     is logged and ignored.
 set -u
+# No pathname expansion: entries such as *.example.com must stay literal in the
+# unquoted list loops below.
+set -f
 
 log() { echo "idea-trusted-domains: $*"; }
 
@@ -38,6 +45,10 @@ run_occ() {
 
 HOST="$(printf '%s' "${IDEA_HOSTNAME:-}" | tr -d '[:space:]')"
 HOST="${HOST%.local}"
+if [ -n "$HOST" ] && ! printf '%s' "$HOST" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; then
+	log "ignoring IDEA_HOSTNAME '$HOST' (not a valid hostname)"
+	HOST=""
+fi
 IPS_RAW="${IDEA_HOST_IPS:-}"
 
 if [ -z "$HOST" ] && [ -z "$(printf '%s' "$IPS_RAW" | tr -d '[:space:],')" ]; then
@@ -108,9 +119,10 @@ for d in $final; do
 	i=$((i + 1))
 done
 n_cur="$(printf '%s\n' "$current" | grep -c . || true)"
-while [ "$i" -lt "$n_cur" ]; do
-	run_occ config:system:delete trusted_domains "$i" >/dev/null 2>&1 || log "WARNING: could not delete stale trusted_domains $i"
-	i=$((i + 1))
+k=$((n_cur - 1))
+while [ "$k" -ge "$i" ]; do
+	run_occ config:system:delete trusted_domains "$k" >/dev/null 2>&1 || log "WARNING: could not delete stale trusted_domains $k"
+	k=$((k - 1))
 done
 
 j=0
@@ -119,9 +131,10 @@ for d in $own; do
 	j=$((j + 1))
 done
 n_man="$(printf '%s\n' "$managed" | grep -c . || true)"
-while [ "$j" -lt "$n_man" ]; do
-	run_occ config:system:delete idea_trusted_domains_managed "$j" >/dev/null 2>&1 || true
-	j=$((j + 1))
+k=$((n_man - 1))
+while [ "$k" -ge "$j" ]; do
+	run_occ config:system:delete idea_trusted_domains_managed "$k" >/dev/null 2>&1 || true
+	k=$((k - 1))
 done
 
 log "trusted_domains = $(printf '%s' "$final" | tr '\n' ' ')${kept:+(kept: $(printf '%s' "$kept" | tr '\n' ' '))}"
