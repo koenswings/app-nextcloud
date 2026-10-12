@@ -1,0 +1,1 @@
+../post-installation/30-idea-office.sh

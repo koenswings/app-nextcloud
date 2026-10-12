@@ -31,7 +31,8 @@ services:
     volumes:
       - ./data/nextcloud:/var/www/html
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
-      - ./docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:/docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:ro
+      # All hook folders (pre-installation, post-installation, before-starting).
+      - ./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro
     ports:
       - ${port}:80
     environment:
@@ -39,6 +40,12 @@ services:
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
       - MYSQL_HOST=nextcloud-db
+      # First start installs itself (official image auto-install), then runs
+      # post-installation hooks (Office), then before-starting hooks (Files Disks, Office).
+      - NEXTCLOUD_ADMIN_USER=admin
+      - NEXTCLOUD_ADMIN_PASSWORD=${pass}
+      - NEXTCLOUD_TRUSTED_DOMAINS=localhost ${hostname} ${hostname}.local ${ip}
+      - IDEA_COLLABORA_URL=http://${ip}:9980
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
     networks:

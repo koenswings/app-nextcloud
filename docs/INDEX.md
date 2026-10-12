@@ -9,3 +9,4 @@ Update this file whenever an authoritative doc is added or significantly revised
 | Doc | Purpose |
 |-----|---------|
 | [files-disk.md](./files-disk.md) | Files Disk opt-in (`x-app.filesMount`), entrypoint wrapper, before-starting hook (idea#137) |
+- [docs/first-start.md](first-start.md) — self-install and hook order
