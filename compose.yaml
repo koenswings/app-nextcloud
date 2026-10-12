@@ -10,7 +10,7 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: 6900555403c84463e2c8ac53e49cc9c08536669e
+  version: c3fc79c56f9667634f6efb5e7078f3a9549a0411
   instanceName: nextcloud
   filesMount:
     path: /mnt/idea-files
