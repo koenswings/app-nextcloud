@@ -25,7 +25,7 @@ switch (cmd) {
       options: { enable_sharing: false }, applicable_users: [], applicable_groups: [] })
     out(0, String(id))
   }
-  case 'files_external:option': { const m = mount(a[1]); if (!m) out(1); m.options[a[2]] = a[3] === 'true' ? true : a[3] === '1' ? 1 : a[3]; out(0) }
+  case 'files_external:option': { const m = mount(a[1]); if (!m) out(1); m.options[a[2]] = a[3] === 'true' ? true : a[3] === 'false' ? false : a[3] === '1' ? 1 : a[3]; out(0) }
   case 'files_external:applicable': {
     const m = mount(a[1]); if (!m) out(1)
     for (const x of a.slice(2)) if (x.startsWith('--add-group=')) {
