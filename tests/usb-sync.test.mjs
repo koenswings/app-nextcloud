@@ -136,3 +136,86 @@ it('concurrent runs (plug + unplug burst) serialise: one storage, lock released'
   assert.deepEqual(await Promise.all([p(), p(), p()]), [0, 0, 0])
   assert.equal(state().mounts.length, 1); assert.ok(!existsSync(lock))
 })
+
+// ---- Engine contract (agent-engine-dev PR #205, docs/USB-STICKS.md) ----
+const S = (device, name) => ({ stickId: `usb-${device}`, device, label: name, displayName: `USB: ${name}` })
+const ownAt = (id, dev, name) => ({ mount_id: id, mount_point: `/USB: ${name}`, configuration: { datadir: join(usb, dev) }, options: { idea_usb: 1, readonly: true, enable_sharing: false }, applicable_groups: ['teachers', 'admin'] })
+
+it('contract: unplug with folder still mounted → JSON wins, storage deleted', () => {
+  stick('sdb1'); stick('sdc1')
+  json({ version: 1, sticks: [S('sdc1', 'B')] })
+  setState({ groups: { admin: ['admin'], teachers: [] }, mounts: [ownAt(1, 'sdb1', 'A'), ownAt(2, 'sdc1', 'B')] })
+  assert.match(run({ IDEA_USB_EVENT: 'unplug' }), /event=unplug JSON ok \(1 stick/)
+  assert.deepEqual(state().mounts.map(m => m.mount_point), ['/USB: B'])
+})
+
+it('contract: valid JSON does not create storages for folders it does not list', () => {
+  stick('sdb1'); stick('sdc1'); json({ version: 1, sticks: [S('sdc1', 'B')] }); setState({})
+  run({ IDEA_USB_EVENT: 'plug' })
+  assert.deepEqual(state().mounts.map(m => m.mount_point), ['/USB: B'])
+})
+
+it('contract: empty sticks list at start → own storages removed, admin kept', () => {
+  stick('sdb1'); json({ version: 1, sticks: [] })
+  setState({ mounts: [ownAt(1, 'sdb1', 'A'), { mount_id: 2, mount_point: '/Mine', configuration: { datadir: join(usb, 'sdb1') }, options: {}, applicable_groups: [] }] })
+  run({ IDEA_USB_EVENT: 'start' })
+  assert.deepEqual(state().mounts.map(m => m.mount_point), ['/Mine'])
+})
+
+for (const [what, write] of [
+  ['missing', () => {}],
+  ['unparsable', () => writeFileSync(join(usb, '.idea-usb.json'), '{"version":1,"sticks":[')],
+  ['sticks not an array', () => json({ version: 1, sticks: {} })],
+  ['bad device entry', () => json({ version: 1, sticks: [{ device: '../x' }] })],
+]) {
+  it(`contract: JSON ${what} → folder rule, nothing deleted for present folders`, () => {
+    stick('sdb1'); write()
+    setState({ groups: { admin: ['admin'], teachers: [] }, mounts: [ownAt(1, 'sdb1', 'sdb1'), ownAt(2, 'gone', 'G')] })
+    assert.match(run({ IDEA_USB_EVENT: 'unplug' }), /JSON missing\/invalid/)
+    assert.deepEqual(state().mounts.map(m => m.mount_point), ['/USB: sdb1'])
+    assert.ok(!state().calls.some(c => c[0] === 'files_external:delete' && c[2] === '1'))
+  })
+}
+
+it('contract: version field — missing or unknown version is treated as invalid (folder rule)', () => {
+  for (const v of [undefined, 2, '1']) {
+    stick('sdb1'); json({ ...(v === undefined ? {} : { version: v }), sticks: [] })
+    setState({ mounts: [ownAt(1, 'sdb1', 'sdb1')] })
+    assert.match(run(), /JSON missing\/invalid/, String(v))
+    assert.equal(state().mounts.length, 1, String(v))
+  }
+  json({ version: 1, sticks: [] }); setState({ mounts: [ownAt(1, 'sdb1', 'sdb1')] })
+  assert.match(run(), /JSON ok/); assert.equal(state().mounts.length, 0)
+})
+
+it('contract: IDEA_USB_ROOT / IDEA_USB_JSON env overrides (absolute and relative JSON path)', () => {
+  const alt = join(dir, 'alt-root'); mkdirSync(join(alt, 'sdx1'), { recursive: true })
+  const jp = join(dir, 'elsewhere.json')
+  writeFileSync(jp, JSON.stringify({ version: 1, sticks: [S('sdx1', 'ALT')] }))
+  setState({})
+  run({ IDEA_USB_ROOT: alt, IDEA_USB_JSON: jp })
+  assert.equal(state().mounts[0].mount_point, '/USB: ALT')
+  assert.equal(state().mounts[0].configuration.datadir, join(alt, 'sdx1'))
+  writeFileSync(join(alt, 'rel.json'), JSON.stringify({ version: 1, sticks: [S('sdx1', 'REL')] }))
+  run({ IDEA_USB_ROOT: alt, IDEA_USB_JSON: 'rel.json' })
+  assert.deepEqual(state().mounts.map(m => m.mount_point), ['/USB: REL'])
+})
+
+it('contract: defaults — IDEA_USB_JSON unset reads $ROOT/.idea-usb.json', () => {
+  stick('sdb1'); json({ version: 1, sticks: [S('sdb1', 'DEF')] }); setState({})
+  assert.match(run(), /JSON ok/); assert.equal(state().mounts[0].mount_point, '/USB: DEF')
+})
+
+it('contract: Nextcloud not ready → exit 0 well within 120 s, nothing written', () => {
+  stick('sdb1'); json({ version: 1, sticks: [] })
+  setState({ notReady: 99, mounts: [ownAt(1, 'sdb1', 'A')] })
+  const t = Date.now()
+  assert.match(run({ IDEA_OCC_WAIT: '2', IDEA_USB_EVENT: 'start' }), /not ready/)
+  assert.ok(Date.now() - t < 20000)
+  assert.equal(state().mounts.length, 1); assert.deepEqual(writes(state().calls), [])
+})
+
+it('contract: default occ wait is bounded (<=75 s) so total stays under the 120 s timeout', () => {
+  const src = readFileSync(SCRIPT, 'utf8')
+  assert.match(src, /IDEA_OCC_WAIT:-60/); assert.match(src, /OCC_WAIT=75/); assert.match(src, /-ge 30 \]/)
+})

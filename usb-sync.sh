@@ -2,7 +2,10 @@
 # usb-sync.sh — reconcile Nextcloud Local external storages with mounted USB sticks
 # (idea#193, proposals/2026-10-14-teacher-usb-sticks.md §4).
 #
-# Called by the Engine as `docker exec -u www-data <nextcloud-app> /idea/usb-sync.sh`
+# Called by the Engine (agent-engine-dev docs/USB-STICKS.md §4) as
+#   timeout 120 docker exec -u www-data -e IDEA_USB_EVENT=plug|unplug|start \
+#     -e IDEA_USB_ROOT -e IDEA_USB_JSON <id>-nextcloud-app-1 /idea/usb-sync.sh
+# (one retry after 15 s). Runtime is bounded below 120 s (lock 30 s + occ wait <=75 s).
 # once at start and after every plug and unplug. The Engine binds host
 # /run/idea-usb → /mnt/idea-usb (read-only, rslave), so each stick appears as
 # /mnt/idea-usb/<dev> (e.g. sdb1) without recreating the container.
@@ -19,10 +22,11 @@
 #
 # Env (tests may override):
 #   IDEA_USB_ROOT        default /mnt/idea-usb
-#   IDEA_USB_JSON        default .idea-usb.json
+#   IDEA_USB_JSON        default $ROOT/.idea-usb.json (relative → under ROOT)
+#   IDEA_USB_EVENT       plug|unplug|start (logged only; every run is a full reconcile)
 #   OCC                  occ-compatible binary (default: php /var/www/html/occ)
 #   IDEA_TEACHERS_GROUP  default teachers (created when missing)
-#   IDEA_OCC_WAIT / IDEA_OCC_INTERVAL  occ readiness wait (default 120 / 3 s)
+#   IDEA_OCC_WAIT / IDEA_OCC_INTERVAL  occ readiness wait (default 60 / 3 s, capped at 75)
 #   IDEA_USB_LOCK        lock dir (default /tmp/idea-usb-sync.lock)
 #
 # Fail open: always exits 0; nothing is deleted when occ is not usable.
@@ -30,7 +34,9 @@ set -u
 set -f   # never glob-expand names (labels, admin entries)
 
 ROOT="${IDEA_USB_ROOT:-/mnt/idea-usb}"; ROOT="${ROOT%/}"
-JSON_PATH="$ROOT/${IDEA_USB_JSON:-.idea-usb.json}"
+JSON_PATH="${IDEA_USB_JSON:-$ROOT/.idea-usb.json}"
+case "$JSON_PATH" in /*) ;; *) JSON_PATH="$ROOT/$JSON_PATH" ;; esac
+EVENT="${IDEA_USB_EVENT:-}"
 LOCK="${IDEA_USB_LOCK:-/tmp/idea-usb-sync.lock}"
 log() { echo "idea-usb: $*"; }
 
@@ -45,6 +51,10 @@ helper() {
 		node -e '
 const fs=require("fs");const [mode,...a]=process.argv.slice(1);
 const t=v=>v===true||v===1||v==="1"||v==="true";
+if(mode==="devices"){let j;try{j=JSON.parse(fs.readFileSync(a[0],"utf8"))}catch{process.exit(3)}
+ if(!j||typeof j!=="object"||Array.isArray(j)||j.version!==1||!Array.isArray(j.sticks))process.exit(3);
+ for(const x of j.sticks){if(!x||typeof x.device!=="string"||!/^[A-Za-z0-9._-]+$/.test(x.device))process.exit(3)}
+ for(const x of j.sticks)console.log(x.device);process.exit(0)}
 if(mode==="list"){let j;try{j=JSON.parse(fs.readFileSync(0,"utf8")||"[]")}catch{process.exit(0)}
  if(!Array.isArray(j))process.exit(0);
  for(const m of j){const o=m.options||{},c=m.configuration||{};
@@ -59,6 +69,10 @@ else{let j;try{j=JSON.parse(fs.readFileSync(a[0],"utf8"))}catch{process.exit(0)}
 		php -r '
 $a=array_slice($argv,1);$mode=array_shift($a);
 $t=function($v){return $v===true||$v===1||$v==="1"||$v==="true";};
+if($mode==="devices"){$j=json_decode(@file_get_contents($a[0]),true);
+ if(!is_array($j)||array_is_list($j)||($j["version"]??null)!==1||!isset($j["sticks"])||!is_array($j["sticks"])||!array_is_list($j["sticks"]))exit(3);
+ foreach($j["sticks"] as $x){if(!is_array($x)||!is_string($x["device"]??null)||!preg_match('~^[A-Za-z0-9._-]+$~',$x["device"]))exit(3);}
+ foreach($j["sticks"] as $x)echo $x["device"],"\n";exit(0);}
 if($mode==="list"){$j=json_decode(stream_get_contents(STDIN),true);if(!is_array($j))exit(0);
  foreach($j as $m){$o=$m["options"]??[];$c=$m["configuration"]??[];
   echo implode("|",[$m["mount_id"]??$m["id"]??"",ltrim((string)($m["mount_point"]??""),"/"),$c["datadir"]??"",$t($o["idea_usb"]??null)?1:0,$t($o["readonly"]??null)?1:0,$t($o["enable_sharing"]??null)?1:0,implode(",",is_array($m["applicable_groups"]??null)?$m["applicable_groups"]:[])]),"\n";}}
@@ -94,8 +108,9 @@ main() {
 	# Root absent: Engine without usbMount, or no bind yet. Nothing to reconcile.
 	if [ ! -d "$ROOT" ]; then log "$ROOT absent — skip reconcile"; return 0; fi
 
-	OCC_WAIT="${IDEA_OCC_WAIT:-120}"; OCC_INTERVAL="${IDEA_OCC_INTERVAL:-3}"
-	case "$OCC_WAIT" in ''|*[!0-9]*) OCC_WAIT=120 ;; esac
+	OCC_WAIT="${IDEA_OCC_WAIT:-60}"; OCC_INTERVAL="${IDEA_OCC_INTERVAL:-3}"
+	case "$OCC_WAIT" in ''|*[!0-9]*) OCC_WAIT=60 ;; esac
+	[ "$OCC_WAIT" -le 75 ] || OCC_WAIT=75   # Engine kills us at 120 s
 	case "$OCC_INTERVAL" in ''|*[!0-9]*|0) OCC_INTERVAL=3 ;; esac
 	waited=0
 	while :; do
@@ -126,6 +141,22 @@ main() {
 		log "files_external unavailable — skip reconcile"; return 0
 	fi
 
+	# Engine contract (agent-engine-dev docs/USB-STICKS.md): a valid
+	# {version:1, sticks:[...]} is the COMPLETE desired list. On unplug the JSON is
+	# updated before umount, so a device missing from a valid JSON is gone even
+	# while its folder still exists. Missing/invalid JSON → folder-existence rule.
+	devs="$(mktemp)"
+	if [ -f "$JSON_PATH" ] && helper devices "$JSON_PATH" > "$devs" 2>/dev/null; then
+		JSON_OK=1; log "event=${EVENT:-none} JSON ok ($(grep -c . "$devs") stick(s))"
+	else
+		JSON_OK=0; : > "$devs"; log "event=${EVENT:-none} JSON missing/invalid ($JSON_PATH) — folder rule"
+	fi
+	present() {   # $1 = device folder name
+		[ -d "$ROOT/$1" ] || return 1
+		[ "$JSON_OK" = 1 ] || return 0
+		grep -Fxq "$1" "$devs"
+	}
+
 	# 1) Own storages: delete when folder gone or name changed (other stick on same dev).
 	keep="$(mktemp)"; any="$(mktemp)"
 	list_lines > "$any.lines"
@@ -135,7 +166,7 @@ main() {
 		[ "$own" = 1 ] || continue
 		case "$datadir" in "$ROOT"/*) ;; *) continue ;; esac
 		base="${datadir#"$ROOT"/}"
-		if [ ! -d "$datadir" ]; then
+		if ! present "$base"; then
 			log "delete storage id=$id \"$mp\" (stick gone)"; delete_storage "$id"
 		elif [ "$mp" != "$(name_for "$base")" ]; then
 			log "delete storage id=$id \"$mp\" (name changed)"; delete_storage "$id"
@@ -156,6 +187,7 @@ main() {
 		[ -d "$dir" ] || continue
 		base="${dir##*/}"
 		datadir="$ROOT/$base"
+		present "$base" || continue
 		grep -Fxq "$datadir" "$any.admin" 2>/dev/null && continue
 		grep -Fxq "$datadir" "$keep.dirs" 2>/dev/null && continue
 		name="$(name_for "$base")"
@@ -182,7 +214,7 @@ main() {
 				|| log "WARNING could not restrict storage id=$id to group $g"
 		done
 	done < "$keep"
-	rm -f "$keep" "$keep.dirs" "$any" "$any.lines" "$any.admin"
+	rm -f "$devs" "$keep" "$keep.dirs" "$any" "$any.lines" "$any.admin"
 	log "reconcile done"
 }
 
@@ -191,7 +223,7 @@ main() {
 i=0
 while ! mkdir "$LOCK" 2>/dev/null; do
 	i=$((i + 1))
-	if [ "$i" -ge 150 ]; then log "lock busy — taking over stale lock"; break; fi
+	if [ "$i" -ge 30 ]; then log "lock busy — taking over stale lock"; break; fi
 	sleep 1
 done
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
