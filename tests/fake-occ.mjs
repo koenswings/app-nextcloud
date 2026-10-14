@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // fake-occ.mjs — occ subset used by the install/Office/Files hooks, on a JSON state file.
 // State (FAKE_OCC_STATE): { installed, online, appsPresent[], appsEnabled[], app:{app:{k:v}}, system:{}, mounts:[], calls:[] }
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 const path = process.env.FAKE_OCC_STATE
 const s = JSON.parse(readFileSync(path, 'utf8'))
 const a = process.argv.slice(2)
@@ -16,7 +17,8 @@ if (!s.installed) out(1, 'Nextcloud is not installed - only a limited number of 
 switch (cmd) {
   case 'app:list': out(0, s.appsEnabled.map(x => `  - ${x}: 1.0`).join('\n'))
   case 'app:enable':
-    if (!s.appsPresent.includes(a[1])) out(1, `${a[1]} not found`)
+    // Present = shipped with core (appsPresent) or code found in custom_apps (bundled-apps hook).
+    if (!s.appsPresent.includes(a[1]) && !(process.env.IDEA_CUSTOM_APPS && existsSync(join(process.env.IDEA_CUSTOM_APPS, a[1], 'appinfo/info.xml')))) out(1, `${a[1]} not found`)
     if (!s.appsEnabled.includes(a[1])) s.appsEnabled.push(a[1]); out(0)
   case 'app:install':
     if (!s.online) out(1, `Could not download app ${a[1]}`)

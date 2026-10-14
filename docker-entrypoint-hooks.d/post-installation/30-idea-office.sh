@@ -4,11 +4,11 @@
 #   post-installation/30-idea-office.sh  (first start, right after maintenance:install)
 #   before-starting/30-idea-office.sh    (symlink; every start, idempotent)
 # Fail open: always exits 0 so Nextcloud starts even when Office can't be set up.
-# Offline Pis can't download richdocuments from the app store; if the app code is
-# not present the hook logs a warning and leaves Office unconfigured.
+# richdocuments comes from the App Disk (20-idea-bundled-apps.sh) so this works offline;
+# if the app code is still not present the hook logs a warning and leaves Office unconfigured.
 #
 # Env:
-#   IDEA_COLLABORA_URL  e.g. http://192.168.0.231:9980 (browser + server URL). Empty → skip.
+#   IDEA_COLLABORA_URL  http://<LAN IP from Engine>:9980 (browser + server URL). Empty → skip.
 #   OCC                 occ-compatible binary for tests (default: php occ)
 set -u
 
@@ -49,7 +49,7 @@ set_app wopi_url "$URL"
 set_app public_wopi_url "$URL"
 case "$URL" in http://*) set_app disable_certificate_verification yes ;; esac
 
-# CODE runs on the LAN/Tailscale address; NC must be allowed to call it.
+# CODE runs on the Pi's LAN IP (a local address); NC must be allowed to call it.
 if [ "$(run_occ config:system:get allow_local_remote_servers 2>/dev/null || true)" != "true" ]; then
 	run_occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null 2>&1 \
 		&& log "set allow_local_remote_servers=true" || true

@@ -33,6 +33,8 @@ services:
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
       # All hook folders (pre-installation, post-installation, before-starting).
       - ./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro
+      # Apps shipped on the App Disk (richdocuments for offline Office), see docs/first-start.md.
+      - ./bundled-apps:/idea-bundled-apps:ro
     ports:
       - ${port}:80
     environment:
@@ -43,8 +45,11 @@ services:
       # First start installs itself (official image auto-install), then runs
       # post-installation hooks (Office), then before-starting hooks (Files Disks, Office).
       - NEXTCLOUD_ADMIN_USER=admin
-      - NEXTCLOUD_ADMIN_PASSWORD=${pass}
+      # Separate admin secret from the Engine (agent-engine-dev issue, see docs/first-start.md).
+      # TODO: drop the ${pass} fallback once the Engine always writes IDEA_NC_ADMIN_PASSWORD.
+      - NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-${pass}}
       - NEXTCLOUD_TRUSTED_DOMAINS=localhost ${hostname} ${hostname}.local ${ip}
+      # Office (CODE) is reached on the LAN IP the Engine passes as ${ip}; no Tailscale special case.
       - IDEA_COLLABORA_URL=http://${ip}:9980
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
