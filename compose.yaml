@@ -41,6 +41,8 @@ services:
       - MYSQL_HOST=nextcloud-db
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
+      # Files Disk storages are visible to this group + admin only (created if missing).
+      - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
     networks:
       - backend
   nextcloud-db:

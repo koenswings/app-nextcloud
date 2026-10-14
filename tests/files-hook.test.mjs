@@ -1,0 +1,119 @@
+/**
+ * before-starting/10-idea-files.sh with a fake occ (tests/fake-occ-files.mjs).
+ * Run: node --test tests/
+ */
+import { it, beforeEach, afterEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const HOOK = join(root, 'docker-entrypoint-hooks.d/before-starting/10-idea-files.sh')
+const FAKE = join(root, 'tests/fake-occ-files.mjs')
+let dir, statePath, filesRoot
+const state = () => JSON.parse(readFileSync(statePath, 'utf8'))
+const setState = s => writeFileSync(statePath, JSON.stringify({ calls: [], ...s }))
+const run = (extra = {}) => {
+  const r = spawnSync('sh', [HOOK], { encoding: 'utf8', env: { PATH: process.env.PATH, OCC: FAKE, FAKE_OCC_STATE: statePath,
+    IDEA_FILES_ROOT: filesRoot, IDEA_OCC_INTERVAL: '1', IDEA_OCC_WAIT: '5', ...extra } })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  return r.stdout
+}
+const writes = calls => calls.filter(c => !['status', 'files_external:list', 'group:list', 'app:enable'].includes(c[0]))
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'idea-files-')); statePath = join(dir, 'occ.json')
+  filesRoot = join(dir, 'idea-files'); mkdirSync(join(filesRoot, 'school-files-164250'), { recursive: true })
+})
+afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+it('(1) occ not ready at container start: waits, then reconciles', () => {
+  setState({ notReady: 2 })
+  const out = run()
+  assert.match(out, /occ ready after 2s/)
+  assert.equal(state().mounts.length, 1)
+})
+
+it('(1) occ never ready: bounded wait, exit 0, nothing created or deleted', () => {
+  setState({ notReady: 99, mounts: [{ mount_id: 7, mount_point: '/Gone', configuration: { datadir: join(filesRoot, 'gone') }, options: { idea_files: 1 }, applicable_groups: [] }] })
+  const t = Date.now(); const out = run({ IDEA_OCC_WAIT: '2' })
+  assert.ok(Date.now() - t < 5000)
+  assert.match(out, /occ not ready after 2s/)
+  assert.equal(state().mounts.length, 1)
+  assert.deepEqual(writes(state().calls), [])
+})
+
+it('(1) not installed: no wait, no writes', () => {
+  setState({ installed: false })
+  assert.match(run(), /not installed/)
+  assert.deepEqual(state().calls.map(c => c[0]), ['status'])
+})
+
+it('(2) new storage: idea_files, enable_sharing true, filesystem_check_changes', () => {
+  setState({})
+  run()
+  const m = state().mounts[0]
+  assert.equal(m.configuration.datadir, join(filesRoot, 'school-files-164250'))
+  assert.deepEqual(m.options, { enable_sharing: true, idea_files: 1, filesystem_check_changes: 1 })
+})
+
+it('(2) existing own storage without sharing (wh state) gets enable_sharing on next start', () => {
+  setState({ groups: { admin: ['admin'], teachers: [] }, mounts: [{ mount_id: 1, mount_point: '/School Files', configuration: { datadir: join(filesRoot, 'school-files-164250') },
+    options: { enable_sharing: false, filesystem_check_changes: 1, idea_files: 1 }, applicable_users: [], applicable_groups: [] }] })
+  run()
+  const m = state().mounts[0]
+  assert.equal(m.options.enable_sharing, true)
+  assert.deepEqual(m.applicable_groups, ['teachers', 'admin'])
+})
+
+it('(3) default teachers group is created and storage limited to teachers + admin', () => {
+  setState({})
+  assert.match(run(), /created group teachers/)
+  assert.ok(state().groups.teachers)
+  assert.deepEqual(state().mounts[0].applicable_groups, ['teachers', 'admin'])
+})
+
+it('(3) IDEA_TEACHERS_GROUP is configurable; existing group not re-created', () => {
+  setState({ groups: { admin: ['admin'], 'demo-teachers': ['demo-teacher1'] } })
+  run({ IDEA_TEACHERS_GROUP: 'demo-teachers' })
+  assert.ok(!state().calls.some(c => c[0] === 'group:add'))
+  assert.deepEqual(state().mounts[0].applicable_groups, ['demo-teachers', 'admin'])
+})
+
+it('(3) invalid group name: warns, storage still created, not restricted', () => {
+  setState({})
+  assert.match(run({ IDEA_TEACHERS_GROUP: 'bad;rm -rf' }), /invalid/)
+  assert.equal(state().mounts.length, 1)
+  assert.ok(!state().calls.some(c => c[0] === 'group:add' || c[0] === 'files_external:applicable'))
+})
+
+it('(3) admin-added groups are kept; admin Local storages untouched', () => {
+  const adminDir = join(filesRoot, 'admin-made'); mkdirSync(adminDir)
+  setState({ groups: { admin: ['admin'], teachers: [], staff: [] }, mounts: [
+    { mount_id: 1, mount_point: '/School Files', configuration: { datadir: join(filesRoot, 'school-files-164250') }, options: { idea_files: 1, enable_sharing: true }, applicable_groups: ['staff'] },
+    { mount_id: 2, mount_point: '/Admin', configuration: { datadir: adminDir }, options: {}, applicable_groups: [] }] })
+  run()
+  const [own, adm] = state().mounts
+  assert.deepEqual(own.applicable_groups, ['staff', 'teachers', 'admin'])
+  assert.deepEqual(adm.applicable_groups, []); assert.deepEqual(adm.options, {})
+})
+
+it('idempotent: second start makes no changes except the existing check-changes refresh', () => {
+  setState({})
+  run(); const before = state(); const n = before.calls.length
+  run(); const after = state()
+  assert.deepEqual(after.mounts, before.mounts); assert.deepEqual(after.groups, before.groups)
+  const w = writes(after.calls.slice(n))
+  assert.ok(w.every(c => c[0] === 'files_external:option' && c[2] === 'filesystem_check_changes'), JSON.stringify(w))
+})
+
+it('own storage whose folder is gone is deleted; files root absent → skip', () => {
+  setState({ mounts: [{ mount_id: 4, mount_point: '/Old', configuration: { datadir: join(filesRoot, 'old-1') }, options: { idea_files: 1 }, applicable_groups: [] }] })
+  run()
+  assert.deepEqual(state().mounts.map(m => m.configuration.datadir), [join(filesRoot, 'school-files-164250')])
+  rmSync(filesRoot, { recursive: true }); setState({})
+  assert.match(run(), /absent/)
+})
