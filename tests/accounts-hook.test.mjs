@@ -4,7 +4,7 @@
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +27,10 @@ it('compose: admin is admin / ${IDEA_NC_ADMIN_PASSWORD:-admin911!}; hook mounted
   const c = readFileSync(join(root, 'compose.yaml'), 'utf8')
   assert.match(c, /- NEXTCLOUD_ADMIN_USER=admin\n/)
   assert.match(c, /- NEXTCLOUD_ADMIN_PASSWORD=\$\{IDEA_NC_ADMIN_PASSWORD:-admin911!\}\n/)
-  assert.match(c, /20-idea-accounts\.sh:\/docker-entrypoint-hooks\.d\/before-starting\/20-idea-accounts\.sh:ro/)
+  // The whole hooks folder is mounted (#5), which carries before-starting/20-idea-accounts.sh.
+  assert.match(c, /- \.\/docker-entrypoint-hooks\.d:\/docker-entrypoint-hooks\.d:ro\n/)
+  assert.ok(existsSync(join(root, 'docker-entrypoint-hooks.d/before-starting/20-idea-accounts.sh')))
+  assert.equal(c.match(/- NEXTCLOUD_ADMIN_PASSWORD=/g).length, 1, 'admin password set exactly once')
   assert.match(c, /MYSQL_PASSWORD=\$\{pass\}/)
   assert.match(c, /MYSQL_ROOT_PASSWORD=\$\{pass\}/)
 })
