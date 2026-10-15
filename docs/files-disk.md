@@ -23,3 +23,19 @@ Both scripts need **no special case** when Nextcloud runs on a combined App+File
 ## Restart policy
 
 Every service keeps `restart: no` so Docker never restarts Nextcloud with a stale Files Disk mount; the Engine decides when to start or recreate.
+
+## Hook behaviour (fix/files-disk-hook)
+
+- **Waits for occ.** On container start MariaDB is often not up yet, so `occ status` fails.
+  The hook retries every `IDEA_OCC_INTERVAL` s (3) for up to `IDEA_OCC_WAIT` s (120), then
+  skips with "occ not ready after …" and deletes nothing. Not installed → skip at once. Always exits 0.
+- **Sharing on.** Own storages get `enable_sharing true` (files_external defaults it to false,
+  so teachers could not share files from the Files Disk), plus `idea_files 1` and
+  `filesystem_check_changes 1`. Existing own storages are fixed on the next start.
+- **Teachers + admin only.** Own storages are limited via `files_external:applicable
+  --add-group` to `IDEA_TEACHERS_GROUP` (default `teachers`) and `admin`. The group is
+  created with `group:add` if missing (empty; an admin adds teachers to it). Groups an admin
+  added to the storage are kept; nothing is removed. An invalid group name is logged and the
+  storage is left unrestricted. Admin-created storages are never touched.
+- Idempotent: a second start only re-asserts `filesystem_check_changes`.
+- Tests: `node --test tests/` (fake occ in `tests/fake-occ-files.mjs`).
