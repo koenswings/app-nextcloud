@@ -23,6 +23,10 @@ const setState = (s) => writeFileSync(statePath, JSON.stringify({ calls: [], ...
 const env = (extra = {}) => ({ PATH: process.env.PATH, OCC: FAKE_OCC, FAKE_OCC_STATE: statePath,
   IDEA_FILES_ROOT: filesRoot, IDEA_COLLABORA_URL: URL, IDEA_BUNDLED_APPS: BUNDLED, IDEA_CUSTOM_APPS: customApps, ...extra })
 
+// Every hook in a folder, in the entrypoint's order (sorted), so a new hook does not need a test edit here.
+const hooksIn = (folder) => readdirSync(join(HOOKS, folder)).filter(f => f.endsWith('.sh')).sort().map(f => `${folder}/${f}`)
+const BEFORE = hooksIn('before-starting')
+
 function runPath(folder, e, log) {
   const p = join(HOOKS, folder)
   if (!existsSync(p)) return
@@ -56,7 +60,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 it('compose: auto-install env set, whole hooks dir mounted, no Office before install', () => {
   const c = readFileSync(join(root, 'compose.yaml'), 'utf8')
-  for (const k of ['NEXTCLOUD_ADMIN_USER=', 'NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-${pass}}', 'MYSQL_HOST=',
+  for (const k of ['NEXTCLOUD_ADMIN_USER=', 'NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-admin911!}', 'MYSQL_HOST=',
     'IDEA_COLLABORA_URL=http://${ip}:9980', './bundled-apps:/idea-bundled-apps:ro'])
     assert.ok(c.includes(k), k)
   assert.ok(c.includes('./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro'))
@@ -67,8 +71,7 @@ it('compose: auto-install env set, whole hooks dir mounted, no Office before ins
 it('first start: installs, Office in post-installation, then Files + Office in before-starting', () => {
   setState({ installed: false, appsPresent: ['richdocuments', 'files_external'] })
   const log = start(env(creds))
-  assert.deepEqual(log, ['install', 'post-installation/20-idea-bundled-apps.sh', 'post-installation/30-idea-office.sh',
-    'before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
+  assert.deepEqual(log, ['install', ...hooksIn('post-installation'), ...BEFORE])
   const s = state()
   assert.equal(s.installed, true)
   assert.equal(s.app.richdocuments.wopi_url, URL)
@@ -86,7 +89,7 @@ it('second start: no install, Office idempotent (no writes)', () => {
   start(env(creds))
   const n = state().calls.length
   const log = start(env(creds))
-  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
+  assert.deepEqual(log, BEFORE)
   const later = state().calls.slice(n).map(c => c[0])
   assert.ok(!later.includes('maintenance:install'))
   assert.ok(!later.includes('config:app:set') && !later.includes('config:system:set'), later.join(','))
@@ -105,7 +108,7 @@ it('offline, no bundle on disk: warns, NC still starts, Files Disk still works',
   const r = spawnSync(join(HOOKS, 'post-installation/30-idea-office.sh'), [], { env: env(), encoding: 'utf8' })
   assert.equal(r.status, 0); assert.match(r.stdout, /not installed yet/)
   const log = start(env({ ...creds, IDEA_BUNDLED_APPS: join(dir, 'none') }))
-  assert.equal(log.length, 7)
+  assert.equal(log.length, 1 + hooksIn('post-installation').length + BEFORE.length)
   assert.equal(state().app.richdocuments, undefined)
   assert.equal(state().mounts.length, 1)
 })
@@ -113,7 +116,7 @@ it('offline, no bundle on disk: warns, NC still starts, Files Disk still works',
 it('no admin creds (old behaviour): no install, hooks skip quietly', () => {
   setState({ installed: false, appsPresent: ['richdocuments'] })
   const log = start(env())
-  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
+  assert.deepEqual(log, BEFORE)
   assert.equal(state().installed, false)
   assert.ok(state().calls.every(c => ['status', 'app:enable', 'files_external:list'].includes(c[0])), JSON.stringify(state().calls))
 })

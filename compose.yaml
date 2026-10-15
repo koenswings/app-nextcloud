@@ -56,8 +56,8 @@ services:
       # post-installation hooks (Office), then before-starting hooks (Files Disks, Office).
       - NEXTCLOUD_ADMIN_USER=admin
       # Separate admin secret from the Engine (agent-engine-dev issue, see docs/first-start.md).
-      # TODO: drop the ${pass} fallback once the Engine always writes IDEA_NC_ADMIN_PASSWORD.
-      - NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-${pass}}
+      # Fallback is the IDEA default admin911! (<account name>911! scheme), never the random ${pass}.
+      - NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-admin911!}
       - NEXTCLOUD_TRUSTED_DOMAINS=localhost ${hostname} ${hostname}.local ${ip}
       # Office (CODE) is reached on the LAN IP the Engine passes as ${ip}; no Tailscale special case.
       - IDEA_COLLABORA_URL=http://${ip}:9980

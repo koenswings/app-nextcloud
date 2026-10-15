@@ -3,8 +3,8 @@
 The official `nextcloud` image auto-installs on first start when
 `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_ADMIN_PASSWORD` and the `MYSQL_*` variables are set
 (it retries `maintenance:install` up to 10× while MariaDB comes up). compose.yaml now sets
-`admin` / `${IDEA_NC_ADMIN_PASSWORD:-${pass}}` (separate admin secret from the Engine,
-koenswings/agent-engine-dev#202; the `${pass}` fallback is a TODO to drop) and `NEXTCLOUD_TRUSTED_DOMAINS` (install-time only).
+`admin` / `${IDEA_NC_ADMIN_PASSWORD:-admin911!}` (separate admin secret from the Engine,
+koenswings/agent-engine-dev#202; the fallback is the IDEA default `admin911!`) and `NEXTCLOUD_TRUSTED_DOMAINS` (install-time only).
 
 The whole `docker-entrypoint-hooks.d/` folder is mounted read-only. Order on the first start:
 
