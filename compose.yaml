@@ -15,6 +15,12 @@ x-app:
   filesMount:
     path: /mnt/idea-files
     services: [nextcloud-app]
+  # idea#193: Engine binds host /run/idea-usb -> /mnt/idea-usb (ro, rslave) once;
+  # then runs `docker exec -u www-data <nextcloud-app> /idea/usb-sync.sh` at start
+  # and after every USB stick plug/unplug.
+  usbMount:
+    path: /mnt/idea-usb
+    services: [nextcloud-app]
 networks:
   backend: null
 services:
@@ -32,6 +38,8 @@ services:
       - ./data/nextcloud:/var/www/html
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
       - ./docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:/docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:ro
+      # USB stick reconcile (idea#193), run by the Engine via docker exec.
+      - ./usb-sync.sh:/idea/usb-sync.sh:ro
     ports:
       - ${port}:80
     environment:
@@ -41,7 +49,7 @@ services:
       - MYSQL_HOST=nextcloud-db
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
-      # Files Disk storages are visible to this group + admin only (created if missing).
+      # Files Disk and USB stick storages are visible to this group + admin only (created if missing).
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
     networks:
       - backend
