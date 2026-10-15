@@ -1,47 +1,44 @@
 #!/usr/bin/env node
-<<<<<<<< HEAD:tests/fake-occ.mjs
-// fake-occ.mjs — occ subset used by the install/Office/Files hooks, on a JSON state file.
-// State (FAKE_OCC_STATE): { installed, online, appsPresent[], appsEnabled[], app:{app:{k:v}}, system:{}, mounts:[], calls:[] }
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
-========
 // fake-occ-trusted.mjs — the occ subset 20-idea-trusted-domains.sh uses, on a JSON state file.
 //   status | config:system:get <key> | config:system:set <key> <index> --value=<v> | config:system:delete <key> [<index>]
 // State (FAKE_OCC_STATE): { ready: bool, failSet: bool, system: { <key>: string[] | string }, calls: string[][] }
 // Arrays print one value per line, like occ. Like real occ (PHP unset), deleting index N
 // only removes that slot: a hole (null) stays and later indexes do not shift.
 import { readFileSync, writeFileSync } from 'node:fs'
->>>>>>>> feat/trusted-domains-hook:tests/fake-occ-trusted.mjs
 const path = process.env.FAKE_OCC_STATE
 const s = JSON.parse(readFileSync(path, 'utf8'))
-const a = process.argv.slice(2)
-s.calls = [...(s.calls ?? []), a]
-s.appsPresent ??= []; s.appsEnabled ??= []; s.app ??= {}; s.system ??= {}; s.mounts ??= []
-const out = (code, text) => { writeFileSync(path, JSON.stringify(s, null, 2)); if (text) console.log(text); process.exit(code) }
-const val = () => (a.find(x => x.startsWith('--value=')) ?? '').slice(8)
-const [cmd] = a
-if (cmd === 'status') out(0, `  - installed: ${s.installed ? 'true' : 'false'}`)
-if (cmd === 'maintenance:install') { s.installed = true; out(0, 'Nextcloud was successfully installed') }
-if (!s.installed) out(1, 'Nextcloud is not installed - only a limited number of commands are available')
-switch (cmd) {
-  case 'app:list': out(0, s.appsEnabled.map(x => `  - ${x}: 1.0`).join('\n'))
-  case 'app:enable':
-    // Present = shipped with core (appsPresent) or code found in custom_apps (bundled-apps hook).
-    if (!s.appsPresent.includes(a[1]) && !(process.env.IDEA_CUSTOM_APPS && existsSync(join(process.env.IDEA_CUSTOM_APPS, a[1], 'appinfo/info.xml')))) out(1, `${a[1]} not found`)
-    if (!s.appsEnabled.includes(a[1])) s.appsEnabled.push(a[1]); out(0)
-  case 'app:install':
-    if (!s.online) out(1, `Could not download app ${a[1]}`)
-    s.appsPresent.push(a[1]); s.appsEnabled.push(a[1]); out(0)
-  case 'config:app:get': { const v = s.app[a[1]]?.[a[2]]; v === undefined ? out(1) : out(0, v) }
-  case 'config:app:set': (s.app[a[1]] ??= {})[a[2]] = val(); out(0)
-  case 'config:system:get': { const v = s.system[a[1]]; v === undefined ? out(1) : out(0, String(v)) }
-  case 'config:system:set': s.system[a[1]] = a.includes('--type=boolean') ? val() === 'true' : val(); out(0)
-  case 'files_external:list': out(0, JSON.stringify(s.mounts))
-  case 'files_external:create': {
-    const id = s.mounts.length + 1
-    s.mounts.push({ mount_id: id, mount_point: '/' + a[1], configuration: { datadir: a.find(x => x.startsWith('datadir=')).slice(8) }, options: {} })
-    out(0, String(id))
-  }
-  case 'files_external:option': { const m = s.mounts.find(m => String(m.mount_id) === a[1]); m.options[a[2]] = a[3]; out(0) }
+const args = process.argv.slice(2)
+s.calls = [...(s.calls ?? []), args]
+const save = () => writeFileSync(path, JSON.stringify(s, null, 2))
+const [cmd, key, index] = args
+if (!s.ready) { save(); process.stderr.write('Nextcloud is not installed\n'); process.exit(1) }
+s.system = s.system ?? {}
+if (cmd === 'status') { save(); console.log('  - installed: true'); process.exit(0) }
+if (cmd === 'config:system:get') {
+  save()
+  const v = s.system[key]
+  if (v === undefined) process.exit(1)
+  console.log(Array.isArray(v) ? v.filter(x => x !== null).join('\n') : String(v))
+  process.exit(0)
 }
-out(3, `fake-occ: unsupported ${a.join(' ')}`)
+if (cmd === 'config:system:set') {
+  if (s.failSet) { save(); process.exit(1) }
+  const value = (args.find(a => a.startsWith('--value=')) ?? '').slice('--value='.length)
+  const arr = Array.isArray(s.system[key]) ? s.system[key] : []
+  const i = parseInt(index, 10)
+  if (i > arr.length) { save(); process.stderr.write(`index gap ${i}\n`); process.exit(2) }
+  arr[i] = value
+  s.system[key] = arr
+  save(); process.exit(0)
+}
+if (cmd === 'config:system:delete') {
+  if (index === undefined) delete s.system[key]
+  else if (Array.isArray(s.system[key])) {
+    const i = parseInt(index, 10)
+    const arr = s.system[key]
+    if (i < arr.length) arr[i] = null
+    while (arr.length && arr[arr.length - 1] === null) arr.pop()   // trailing holes are invisible
+  }
+  save(); process.exit(0)
+}
+save(); process.stderr.write(`fake-occ: unsupported ${args.join(' ')}\n`); process.exit(3)
