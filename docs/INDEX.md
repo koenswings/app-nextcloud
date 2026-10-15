@@ -9,3 +9,4 @@ Update this file whenever an authoritative doc is added or significantly revised
 | Doc | Purpose |
 |-----|---------|
 | [files-disk.md](./files-disk.md) | Files Disk opt-in (`x-app.filesMount`), entrypoint wrapper, before-starting hook (idea#137) |
+| [usb-sticks.md](./usb-sticks.md) | Read-only USB sticks (`x-app.usbMount`, `usb-sync.sh`, idea#193) |
