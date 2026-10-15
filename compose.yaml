@@ -41,9 +41,10 @@ services:
       - ./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro
       # Apps shipped on the App Disk (richdocuments for offline Office), see docs/first-start.md.
       - ./bundled-apps:/idea-bundled-apps:ro
-      # (the folder mount above also carries before-starting/10-idea-files.sh and 20-idea-trusted-domains.sh, #3)
       # USB stick reconcile (idea#193), run by the Engine via docker exec.
       - ./usb-sync.sh:/idea/usb-sync.sh:ro
+      # Sets trusted_domains for the Pi it runs on, on every start (agent-engine-dev#163)
+      - ./docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:/docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:ro
     ports:
       - ${port}:80
     environment:

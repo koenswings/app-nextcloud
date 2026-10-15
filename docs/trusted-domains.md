@@ -19,4 +19,4 @@ Rules:
 - **Fail open:** with both vars empty (an older Engine), when occ is not ready, or when a set fails, the config is left as it is and the hook exits 0, so Nextcloud still starts.
 - **Never empty:** entries are set by index, then only the stale tail is deleted, highest index first (occ's delete leaves a gap, so lower entries never shift).
 
-Tests: `node --test tests/` (fake occ in `tests/fake-occ.mjs`).
+Tests: `node --test tests/` (fake occ in `tests/fake-occ-trusted.mjs`).
