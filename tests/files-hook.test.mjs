@@ -110,10 +110,78 @@ it('idempotent: second start makes no changes except the existing check-changes 
   assert.ok(w.every(c => c[0] === 'files_external:option' && c[2] === 'filesystem_check_changes'), JSON.stringify(w))
 })
 
-it('own storage whose folder is gone is deleted; files root absent → skip', () => {
-  setState({ mounts: [{ mount_id: 4, mount_point: '/Old', configuration: { datadir: join(filesRoot, 'old-1') }, options: { idea_files: 1 }, applicable_groups: [] }] })
-  run()
-  assert.deepEqual(state().mounts.map(m => m.configuration.datadir), [join(filesRoot, 'school-files-164250')])
+it('own storage whose folder is gone is KEPT unchanged; files root absent → skip', () => {
+  const old = { mount_id: 4, mount_point: '/Old', configuration: { datadir: join(filesRoot, 'old-1') }, options: { idea_files: 1 }, applicable_groups: [] }
+  setState({ mounts: [old] })
+  assert.match(run(), /keep own storage id=4/)
+  const m = state().mounts.find(x => x.mount_id === 4)
+  assert.deepEqual(m, old)
+  assert.ok(!state().calls.some(c => c[0] === 'files_external:delete'))
   rmSync(filesRoot, { recursive: true }); setState({})
   assert.match(run(), /absent/)
+})
+
+const SF = () => join(filesRoot, 'school-files-164250')
+const snapshot = m => JSON.parse(JSON.stringify(m))
+
+it('dock → undock (startup, no disk) → redock: same id, same config, groups kept, no duplicate, never deleted', () => {
+  setState({ groups: { admin: ['admin'], teachers: [], staff: [] } })
+  run()                                       // dock
+  let [m] = state().mounts
+  assert.equal(m.mount_id, 1)
+  // admin adds a group and a share-relevant option after first dock
+  const s0 = state(); s0.mounts[0].applicable_groups.push('staff'); writeFileSync(statePath, JSON.stringify(s0))
+  const docked = snapshot(state().mounts[0])
+  rmSync(SF(), { recursive: true })           // undock: root stays, folder gone (wh incident)
+  const out = run()
+  assert.match(out, /keep own storage id=1/)
+  assert.deepEqual(state().mounts, [docked])
+  run()                                       // second undocked start: still unchanged
+  assert.deepEqual(state().mounts, [docked])
+  mkdirSync(SF())                              // redock
+  run()
+  const after = state().mounts
+  assert.equal(after.length, 1)
+  assert.deepEqual(after[0], docked)
+  assert.deepEqual(after[0].applicable_groups, ['teachers', 'admin', 'staff'])
+  const calls = state().calls
+  assert.ok(!calls.some(c => c[0] === 'files_external:delete'))
+  assert.equal(calls.filter(c => c[0] === 'files_external:create').length, 1)
+})
+
+it('undock with Files root itself empty (no disk folders at all): entry kept', () => {
+  const m = { mount_id: 1, mount_point: '/School Files', configuration: { datadir: SF() },
+    options: { idea_files: 1, enable_sharing: true, filesystem_check_changes: 1 }, applicable_users: [], applicable_groups: ['teachers', 'admin'] }
+  rmSync(SF(), { recursive: true })
+  setState({ groups: { admin: ['admin'], teachers: [] }, mounts: [m] })
+  run()
+  assert.deepEqual(state().mounts, [m])
+  assert.deepEqual(writes(state().calls).filter(c => c[0].startsWith('files_external')), [])
+})
+
+it('two disks, one undocked: docked one maintained, undocked one unchanged, redock reuses its id', () => {
+  const B = join(filesRoot, 'grade5-aaaaaa'); mkdirSync(B)
+  setState({ groups: { admin: ['admin'], teachers: [] } })
+  run()
+  const ids = Object.fromEntries(state().mounts.map(m => [m.configuration.datadir, m.mount_id]))
+  assert.equal(state().mounts.length, 2)
+  const bBefore = snapshot(state().mounts.find(m => m.configuration.datadir === B))
+  rmSync(B, { recursive: true })
+  run()
+  assert.equal(state().mounts.length, 2)
+  assert.deepEqual(state().mounts.find(m => m.configuration.datadir === B), bBefore)
+  mkdirSync(B); run()
+  const ms = state().mounts
+  assert.equal(ms.length, 2)
+  assert.deepEqual(Object.fromEntries(ms.map(m => [m.configuration.datadir, m.mount_id])), ids)
+  assert.deepEqual(ms.find(m => m.configuration.datadir === B), bBefore)
+  assert.ok(!state().calls.some(c => c[0] === 'files_external:delete'))
+})
+
+it('admin-created storage under the root (present or absent) is never touched', () => {
+  const adm = { mount_id: 9, mount_point: '/Admin', configuration: { datadir: join(filesRoot, 'admin-gone') }, options: {}, applicable_users: [], applicable_groups: ['staff'] }
+  setState({ groups: { admin: ['admin'], teachers: [], staff: [] }, mounts: [adm] })
+  run(); rmSync(SF(), { recursive: true }); run()
+  assert.deepEqual(state().mounts.find(m => m.mount_id === 9), adm)
+  assert.ok(!state().calls.some(c => String(c[1]) === '9'))
 })

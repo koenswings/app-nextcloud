@@ -232,3 +232,14 @@ it('php helper: same names and device list as node (runs only where php exists, 
   assert.match(run({ IDEA_USB_HELPER: 'php' }), /JSON ok/)
   assert.equal(state().mounts[0].mount_point, '/USB: PHPSTICK')
 })
+
+it('Files Disk storages (idea_files=1, /mnt/idea-files) are never touched by usb-sync, even on unplug', () => {
+  const fd = { mount_id: 1, mount_point: '/School Files', configuration: { datadir: '/mnt/idea-files/school-files-164250' },
+    options: { idea_files: 1, enable_sharing: true }, applicable_users: [], applicable_groups: ['teachers', 'admin'] }
+  const stray = { mount_id: 2, mount_point: '/Odd', configuration: { datadir: '/mnt/idea-files/x' },
+    options: { idea_usb: 1 }, applicable_users: [], applicable_groups: [] }
+  json([]); setState({ mounts: [fd, stray] })
+  run({ EVENT: 'remove' })
+  assert.deepEqual(state().mounts, [fd, stray])
+  assert.ok(!state().calls.some(c => c[0] === 'files_external:delete'))
+})
