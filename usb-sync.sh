@@ -27,6 +27,7 @@
 #   OCC                  occ-compatible binary (default: php /var/www/html/occ)
 #   IDEA_TEACHERS_GROUP  default teachers (created when missing)
 #   IDEA_OCC_WAIT / IDEA_OCC_INTERVAL  occ readiness wait (default 60 / 3 s, capped at 75)
+#   IDEA_USB_HELPER      php = force the PHP helper (the Nextcloud image has no node; tests)
 #   IDEA_USB_LOCK        lock dir (default /tmp/idea-usb-sync.lock)
 #
 # Fail open: always exits 0; nothing is deleted when occ is not usable.
@@ -47,7 +48,7 @@ run_occ() {
 # js/php helper: $1 = mode (list|name), stdin or args.
 helper() {
 	mode="$1"; shift
-	if command -v node >/dev/null 2>&1; then
+	if [ "${IDEA_USB_HELPER:-}" != php ] && command -v node >/dev/null 2>&1; then
 		node -e '
 const fs=require("fs");const [mode,...a]=process.argv.slice(1);
 const t=v=>v===true||v===1||v==="1"||v==="true";
@@ -71,7 +72,7 @@ $a=array_slice($argv,1);$mode=array_shift($a);
 $t=function($v){return $v===true||$v===1||$v==="1"||$v==="true";};
 if($mode==="devices"){$j=json_decode(@file_get_contents($a[0]),true);
  if(!is_array($j)||array_is_list($j)||($j["version"]??null)!==1||!isset($j["sticks"])||!is_array($j["sticks"])||!array_is_list($j["sticks"]))exit(3);
- foreach($j["sticks"] as $x){if(!is_array($x)||!is_string($x["device"]??null)||!preg_match('~^[A-Za-z0-9._-]+$~',$x["device"]))exit(3);}
+ foreach($j["sticks"] as $x){if(!is_array($x)||!is_string($x["device"]??null)||!preg_match("~^[A-Za-z0-9._-]+\$~",$x["device"]))exit(3);}
  foreach($j["sticks"] as $x)echo $x["device"],"\n";exit(0);}
 if($mode==="list"){$j=json_decode(stream_get_contents(STDIN),true);if(!is_array($j))exit(0);
  foreach($j as $m){$o=$m["options"]??[];$c=$m["configuration"]??[];

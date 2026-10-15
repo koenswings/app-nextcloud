@@ -219,3 +219,16 @@ it('contract: default occ wait is bounded (<=75 s) so total stays under the 120 
   const src = readFileSync(SCRIPT, 'utf8')
   assert.match(src, /IDEA_OCC_WAIT:-60/); assert.match(src, /OCC_WAIT=75/); assert.match(src, /-ge 30 \]/)
 })
+
+it('php helper: the php -r program contains no single quote (it sits inside a single-quoted sh string)', () => {
+  const src = readFileSync(SCRIPT, 'utf8')
+  const m = src.match(/php -r '\n([\s\S]*?)\n' "\$mode"/)
+  assert.ok(m, 'php -r block not found')
+  assert.ok(!m[1].includes("'"), 'single quote inside php -r block breaks sh quoting')
+})
+
+it('php helper: same names and device list as node (runs only where php exists, e.g. the Nextcloud image)', { skip: spawnSync('php', ['-v']).status !== 0 }, () => {
+  stick('sdb1'); json({ version: 1, sticks: [S('sdb1', 'PHPSTICK')] }); setState({})
+  assert.match(run({ IDEA_USB_HELPER: 'php' }), /JSON ok/)
+  assert.equal(state().mounts[0].mount_point, '/USB: PHPSTICK')
+})
