@@ -4,9 +4,9 @@
 #
 # Runs as www-data from the official image's before-starting hook folder.
 # Enables files_external once, creates missing storages for folders under
-# /mnt/idea-files/, deletes only storages this hook created whose folder is
-# gone, and sets filesystem_check_changes so files added outside Nextcloud show.
-# Deleting a storage removes Nextcloud config only — never files on disk.
+# /mnt/idea-files/, and sets filesystem_check_changes so files added outside
+# Nextcloud show. It never deletes a storage: an undocked disk's entry is kept
+# (shown unavailable) and reused with the same id on redock.
 #
 # Own-storage marker: mount option idea_files=1 (set via files_external:option
 # after create). Admin-created Local storages are never deleted, even when their
@@ -15,7 +15,16 @@
 # Env (tests may override):
 #   IDEA_FILES_ROOT  default /mnt/idea-files
 #   IDEA_FILES_JSON  default .idea-files.json (Engine constant IDEA_FILES_JSON)
-#   OCC              path to a single occ-compatible binary (default: use `php occ`)
+#   OCC              path to a single occ-compatible binary (default: php /var/www/html/occ)
+#   IDEA_TEACHERS_GROUP  group that sees the Files Disk storages (default: teachers).
+#                    Own storages are limited to this group + admin via
+#                    files_external:applicable; the group is created when missing.
+#                    Groups an admin added to a storage are kept.
+#   IDEA_OCC_WAIT    seconds to wait for occ/DB to come up (default 120)
+#   IDEA_OCC_INTERVAL seconds between occ readiness checks (default 3)
+#
+# Fail open: always exits 0 so Nextcloud starts; nothing is deleted when occ is
+# not usable.
 set -eu
 
 IDEA_FILES_ROOT="${IDEA_FILES_ROOT:-/mnt/idea-files}"
@@ -26,7 +35,7 @@ run_occ() {
 	if [ -n "${OCC:-}" ]; then
 		"$OCC" "$@"
 	else
-		php occ "$@"
+		php /var/www/html/occ "$@"
 	fi
 }
 
@@ -47,7 +56,10 @@ for (const m of j) {
   const v = opt.idea_files;
   const idea = (v === true || v === 1 || v === "1" || v === "true") ? "1" : "0";
   const mp = String(m.mount_point || "").replace(/^\//, "");
-  console.log([id, mp, conf.datadir || "", idea].join("|"));
+  const sh = opt.enable_sharing;
+  const share = (sh === true || sh === 1 || sh === "1" || sh === "true") ? "1" : "0";
+  const groups = (Array.isArray(m.applicable_groups) ? m.applicable_groups : []).join(",");
+  console.log([id, mp, conf.datadir || "", idea, share, groups].join("|"));
 }
 '
 	else
@@ -63,7 +75,10 @@ foreach ($j as $m) {
   $v = $opt["idea_files"] ?? null;
   $idea = ($v === true || $v === 1 || $v === "1" || $v === "true") ? "1" : "0";
   $mp = ltrim((string)($m["mount_point"] ?? ""), "/");
-  echo $id . "|" . $mp . "|" . ($conf["datadir"] ?? "") . "|" . $idea . "\n";
+  $sh = $opt["enable_sharing"] ?? null;
+  $share = ($sh === true || $sh === 1 || $sh === "1" || $sh === "true") ? "1" : "0";
+  $groups = implode(",", is_array($m["applicable_groups"] ?? null) ? $m["applicable_groups"] : []);
+  echo $id . "|" . $mp . "|" . ($conf["datadir"] ?? "") . "|" . $idea . "|" . $share . "|" . $groups . "\n";
 }
 '
 	fi
@@ -111,10 +126,64 @@ if [ ! -d "$IDEA_FILES_ROOT" ]; then
 	exit 0
 fi
 
-# Fail closed if occ is not usable yet (first install / upgrade in progress).
-if ! run_occ status >/dev/null 2>&1; then
-	echo "idea-files: occ not ready — skip reconcile (fail closed, nothing deleted)"
-	exit 0
+# Wait for occ: on container start MariaDB is often still coming up, so a single
+# `occ status` fails ("occ not ready", seen on wh 2026-10-13). Retry with a bound.
+# Not installed → nothing to reconcile (no wait). Timeout → skip, delete nothing.
+OCC_WAIT="${IDEA_OCC_WAIT:-120}"
+OCC_INTERVAL="${IDEA_OCC_INTERVAL:-3}"
+case "$OCC_WAIT" in ''|*[!0-9]*) OCC_WAIT=120 ;; esac
+case "$OCC_INTERVAL" in ''|*[!0-9]*|0) OCC_INTERVAL=3 ;; esac
+waited=0
+while :; do
+	st="$(run_occ status 2>/dev/null)" && st_ok=1 || st_ok=0
+	if [ "$st_ok" = 1 ]; then
+		case "$st" in
+			*"installed: true"*) break ;;
+			*"installed: false"*)
+				echo "idea-files: Nextcloud not installed — skip reconcile"
+				exit 0 ;;
+			*) break ;;  # status ok but unknown format: proceed
+		esac
+	fi
+	if [ "$waited" -ge "$OCC_WAIT" ]; then
+		echo "idea-files: occ not ready after ${OCC_WAIT}s — skip reconcile (nothing deleted)"
+		exit 0
+	fi
+	sleep "$OCC_INTERVAL"
+	waited=$((waited + OCC_INTERVAL))
+done
+[ "$waited" -gt 0 ] && echo "idea-files: occ ready after ${waited}s"
+
+TEACHERS_GROUP="${IDEA_TEACHERS_GROUP:-teachers}"
+if ! printf '%s' "$TEACHERS_GROUP" | grep -Eq '^[A-Za-z0-9_.@-]{1,64}$'; then
+	echo "idea-files: WARNING IDEA_TEACHERS_GROUP '$TEACHERS_GROUP' invalid — storages not restricted"
+	TEACHERS_GROUP=""
+fi
+
+# Ensure own storage <id> has sharing, check-changes, and teachers+admin applicable.
+# $2 = current enable_sharing (0|1), $3 = current applicable groups (comma list).
+# Writes only what differs (idempotent).
+ensure_own() {
+	id="$1"; share="$2"; groups=",$3,"
+	[ "$share" = "1" ] || set_option "$id" enable_sharing true
+	set_option "$id" filesystem_check_changes 1
+	[ -n "$TEACHERS_GROUP" ] || return 0
+	for g in "$TEACHERS_GROUP" admin; do
+		case "$groups" in *",$g,"*) continue ;; esac
+		if run_occ files_external:applicable "$id" --add-group="$g" >/dev/null 2>&1; then
+			echo "idea-files: storage id=$id visible to group $g"
+		else
+			echo "idea-files: WARNING could not restrict storage id=$id to group $g"
+		fi
+	done
+}
+
+# Teachers group: create when missing (group:add fails harmlessly if it exists).
+if [ -n "$TEACHERS_GROUP" ]; then
+	if ! run_occ group:list --output=json 2>/dev/null | grep -Fq "\"$TEACHERS_GROUP\""; then
+		run_occ group:add "$TEACHERS_GROUP" >/dev/null 2>&1 \
+			&& echo "idea-files: created group $TEACHERS_GROUP" || true
+	fi
 fi
 
 # Enable files_external once (idempotent).
@@ -139,7 +208,7 @@ printf '%s\n' "$list_lines" | while IFS= read -r line; do
 	[ -n "$line" ] || continue
 	id="${line%%|*}"; rest="${line#*|}"
 	mp="${rest%%|*}"; rest="${rest#*|}"
-	datadir="${rest%%|*}"; idea="${rest##*|}"
+	datadir="${rest%%|*}"; rest="${rest#*|}"; idea="${rest%%|*}"
 	[ -n "$datadir" ] && printf '%s\n' "$datadir" >> "$tmp_any"
 	if [ "$idea" = "1" ]; then
 		printf '%s|%s|%s\n' "$id" "$datadir" "$mp" >> "$tmp_own"
@@ -173,7 +242,6 @@ for dir in "$IDEA_FILES_ROOT"/*; do
 	fi
 	if [ -n "$new_id" ]; then
 		set_option "$new_id" idea_files 1
-		set_option "$new_id" filesystem_check_changes 1
 		printf '%s\n' "$datadir" >> "$tmp_any"
 		printf '%s|%s|%s\n' "$new_id" "$datadir" "$name" >> "$tmp_own"
 	else
@@ -181,27 +249,30 @@ for dir in "$IDEA_FILES_ROOT"/*; do
 	fi
 done
 
-# Refresh own list after creates, then delete own storages whose folder is gone.
+# Refresh own list after creates, then maintain own storages whose folder is present.
+# Undocked Files Disk (folder absent, e.g. startup with no disk): KEEP the storage
+# entry unchanged. Nextcloud shows it unavailable; on redock the folder returns at
+# the same datadir, the create loop above skips it (datadir already listed), and
+# the same mount id — with its shares and applicable groups — is reused.
+# There is no definitive "disk retired" signal, so this hook never deletes.
 list_json="$(run_occ files_external:list --output=json 2>/dev/null || echo '[]')"
 printf '%s' "$list_json" | parse_list_json | while IFS= read -r line; do
 	[ -n "$line" ] || continue
 	id="${line%%|*}"; rest="${line#*|}"
 	mp="${rest%%|*}"; rest="${rest#*|}"
-	datadir="${rest%%|*}"; idea="${rest##*|}"
+	datadir="${rest%%|*}"; rest="${rest#*|}"
+	idea="${rest%%|*}"; rest="${rest#*|}"
+	share="${rest%%|*}"; groups="${rest#*|}"
 	[ "$idea" = "1" ] || continue
-	# Only delete when datadir is under our root and the folder is gone.
 	case "$datadir" in
 		"$IDEA_FILES_ROOT"/*) ;;
 		*) continue ;;
 	esac
-	if [ ! -d "$datadir" ]; then
-		echo "idea-files: delete own storage id=$id (folder gone): $datadir"
-		# -y: config only; never touches files on disk (folder already absent).
-		run_occ files_external:delete -y "$id" >/dev/null 2>&1 || \
-			run_occ files_external:delete --yes "$id" >/dev/null 2>&1 || true
+	if [ -d "$datadir" ]; then
+		# Own storages that are docked: sharing, check-changes, teachers+admin.
+		ensure_own "$id" "$share" "$groups"
 	else
-		# Keep filesystem_check_changes on for own storages that remain.
-		set_option "$id" filesystem_check_changes 1
+		echo "idea-files: keep own storage id=$id (disk not docked): $datadir"
 	fi
 done
 
