@@ -4,9 +4,9 @@
 #
 # Runs as www-data from the official image's before-starting hook folder.
 # Enables files_external once, creates missing storages for folders under
-# /mnt/idea-files/, deletes only storages this hook created whose folder is
-# gone, and sets filesystem_check_changes so files added outside Nextcloud show.
-# Deleting a storage removes Nextcloud config only — never files on disk.
+# /mnt/idea-files/, and sets filesystem_check_changes so files added outside
+# Nextcloud show. It never deletes a storage: an undocked disk's entry is kept
+# (shown unavailable) and reused with the same id on redock.
 #
 # Own-storage marker: mount option idea_files=1 (set via files_external:option
 # after create). Admin-created Local storages are never deleted, even when their
@@ -249,7 +249,12 @@ for dir in "$IDEA_FILES_ROOT"/*; do
 	fi
 done
 
-# Refresh own list after creates, then delete own storages whose folder is gone.
+# Refresh own list after creates, then maintain own storages whose folder is present.
+# Undocked Files Disk (folder absent, e.g. startup with no disk): KEEP the storage
+# entry unchanged. Nextcloud shows it unavailable; on redock the folder returns at
+# the same datadir, the create loop above skips it (datadir already listed), and
+# the same mount id — with its shares and applicable groups — is reused.
+# There is no definitive "disk retired" signal, so this hook never deletes.
 list_json="$(run_occ files_external:list --output=json 2>/dev/null || echo '[]')"
 printf '%s' "$list_json" | parse_list_json | while IFS= read -r line; do
 	[ -n "$line" ] || continue
@@ -259,19 +264,15 @@ printf '%s' "$list_json" | parse_list_json | while IFS= read -r line; do
 	idea="${rest%%|*}"; rest="${rest#*|}"
 	share="${rest%%|*}"; groups="${rest#*|}"
 	[ "$idea" = "1" ] || continue
-	# Only delete when datadir is under our root and the folder is gone.
 	case "$datadir" in
 		"$IDEA_FILES_ROOT"/*) ;;
 		*) continue ;;
 	esac
-	if [ ! -d "$datadir" ]; then
-		echo "idea-files: delete own storage id=$id (folder gone): $datadir"
-		# -y: config only; never touches files on disk (folder already absent).
-		run_occ files_external:delete -y "$id" >/dev/null 2>&1 || \
-			run_occ files_external:delete --yes "$id" >/dev/null 2>&1 || true
-	else
-		# Own storages that remain: sharing, check-changes, teachers+admin only.
+	if [ -d "$datadir" ]; then
+		# Own storages that are docked: sharing, check-changes, teachers+admin.
 		ensure_own "$id" "$share" "$groups"
+	else
+		echo "idea-files: keep own storage id=$id (disk not docked): $datadir"
 	fi
 done
 
