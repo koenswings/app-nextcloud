@@ -68,7 +68,7 @@ it('first start: installs, Office in post-installation, then Files + Office in b
   setState({ installed: false, appsPresent: ['richdocuments', 'files_external'] })
   const log = start(env(creds))
   assert.deepEqual(log, ['install', 'post-installation/20-idea-bundled-apps.sh', 'post-installation/30-idea-office.sh',
-    'before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/30-idea-office.sh'])
+    'before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
   const s = state()
   assert.equal(s.installed, true)
   assert.equal(s.app.richdocuments.wopi_url, URL)
@@ -86,7 +86,7 @@ it('second start: no install, Office idempotent (no writes)', () => {
   start(env(creds))
   const n = state().calls.length
   const log = start(env(creds))
-  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/30-idea-office.sh'])
+  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
   const later = state().calls.slice(n).map(c => c[0])
   assert.ok(!later.includes('maintenance:install'))
   assert.ok(!later.includes('config:app:set') && !later.includes('config:system:set'), later.join(','))
@@ -105,7 +105,7 @@ it('offline, no bundle on disk: warns, NC still starts, Files Disk still works',
   const r = spawnSync(join(HOOKS, 'post-installation/30-idea-office.sh'), [], { env: env(), encoding: 'utf8' })
   assert.equal(r.status, 0); assert.match(r.stdout, /not installed yet/)
   const log = start(env({ ...creds, IDEA_BUNDLED_APPS: join(dir, 'none') }))
-  assert.equal(log.length, 6)
+  assert.equal(log.length, 7)
   assert.equal(state().app.richdocuments, undefined)
   assert.equal(state().mounts.length, 1)
 })
@@ -113,7 +113,7 @@ it('offline, no bundle on disk: warns, NC still starts, Files Disk still works',
 it('no admin creds (old behaviour): no install, hooks skip quietly', () => {
   setState({ installed: false, appsPresent: ['richdocuments'] })
   const log = start(env())
-  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/30-idea-office.sh'])
+  assert.deepEqual(log, ['before-starting/10-idea-files.sh', 'before-starting/20-idea-bundled-apps.sh', 'before-starting/20-idea-trusted-domains.sh', 'before-starting/30-idea-office.sh'])
   assert.equal(state().installed, false)
   assert.ok(state().calls.every(c => ['status', 'app:enable', 'files_external:list'].includes(c[0])), JSON.stringify(state().calls))
 })
