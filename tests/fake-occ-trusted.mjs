@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// fake-occ.mjs — the occ subset 20-idea-trusted-domains.sh uses, on a JSON state file.
+// fake-occ-trusted.mjs — the occ subset 20-idea-trusted-domains.sh uses, on a JSON state file.
 //   status | config:system:get <key> | config:system:set <key> <index> --value=<v> | config:system:delete <key> [<index>]
 // State (FAKE_OCC_STATE): { ready: bool, failSet: bool, system: { <key>: string[] | string }, calls: string[][] }
 // Arrays print one value per line, like occ. Like real occ (PHP unset), deleting index N

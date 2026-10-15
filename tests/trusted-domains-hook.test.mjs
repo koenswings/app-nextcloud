@@ -1,6 +1,6 @@
 /**
  * Tests for docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh
- * against fake-occ.mjs (agent-engine-dev#163). Run: node --test tests/
+ * against fake-occ-trusted.mjs (agent-engine-dev#163). Run: node --test tests/
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const HOOK = join(here, '../docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh')
-const FAKE_OCC = join(here, 'fake-occ.mjs')
+const FAKE_OCC = join(here, 'fake-occ-trusted.mjs')
 
 let dir, statePath
 const state = () => JSON.parse(readFileSync(statePath, 'utf8'))
