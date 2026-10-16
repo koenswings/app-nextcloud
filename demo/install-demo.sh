@@ -55,8 +55,10 @@ compose_name() { sed -n 's/^  instanceName:[[:space:]]*//p' "$1/compose.yaml" 2>
 wait_ready() {  # first start self-installs (minutes on a Pi): occ status installed + status.php
   [ "$DRY" = 1 ] && return 0
   local n="${READY_WAIT:-120}"
-  for _ in $(seq "$n"); do occ status 2>/dev/null | grep -q "installed: true" && break; sleep "${READY_STEP:-5}"; done
-  occ status 2>/dev/null | grep -q "installed: true" || return 1
+  # Capture first: with pipefail, `occ status | grep -q` fails at random when grep exits early (SIGPIPE).
+  installed() { local o; o="$(occ status 2>/dev/null)"; [[ "$o" == *"installed: true"* ]]; }
+  for _ in $(seq "$n"); do installed && break; sleep "${READY_STEP:-5}"; done
+  installed || return 1
   for _ in $(seq "$n"); do ${CURL:-curl} -sf -o /dev/null "$NC_URL/status.php" && return 0; sleep "${READY_STEP:-5}"; done
   return 1
 }
