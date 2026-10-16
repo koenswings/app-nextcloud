@@ -175,6 +175,8 @@ main() {
   local rc=0; seed_users || rc=$?
   [ $rc = 0 ] || die $rc "user seeding stopped (exit $rc)"
   upload || die 16 "WebDAV upload failed"
+  # Office: (re)fetch the CODE discovery so documents open right away (fail open).
+  occ richdocuments:activate-config >/dev/null 2>&1 || echo "WARNING: richdocuments:activate-config failed; Office may need a restart" >&2
   printf '{"result":"%s","id":"%s","name":"%s","disk":"%s","port":"%s"}\n' "$result" "$id" "$DEMO_NAME" "$disk" "$port"
 }
 

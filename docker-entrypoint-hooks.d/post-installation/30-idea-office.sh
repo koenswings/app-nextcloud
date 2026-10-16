@@ -59,5 +59,14 @@ if [ "$(run_occ config:system:get allow_local_remote_servers 2>/dev/null || true
 	run_occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null 2>&1 \
 		&& log "set allow_local_remote_servers=true" || true
 fi
+# richdocuments reads the CODE discovery only from its appdata cache, which is filled by
+# richdocuments:activate-config (or a background job that an offline Pi may never run).
+# Without it every "open document" fails (Parser.php: xpath() on false). Refresh it on every
+# start, after the URLs are set; fail open.
+if run_occ richdocuments:activate-config >/dev/null 2>&1; then
+	log "fetched Office discovery (richdocuments:activate-config)"
+else
+	log "WARNING richdocuments:activate-config failed (CODE not up yet?) — Office may not open until it runs"
+fi
 log "done"
 exit 0
