@@ -48,7 +48,14 @@ services:
     ports:
       - ${port}:80
     environment:
-      - MYSQL_PASSWORD=${pass}
+      - MYSQL_PASSWORD=${pass}            # internal DB password: stays generated
+      # IDEA default: admin / admin911! (<account name>911!, change before real use).
+      # IDEA_NC_ADMIN_PASSWORD still overrides it; the fallback is admin911!, not
+      # ${pass}, so the admin login is never a random hard-to-type value.
+      # Only used by the first-start auto-install; an existing admin is never reset.
+      # (NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD are set once, below, with the self-install env.)
+      # Seed users (password <name>911!), see docs/accounts.md. "" = none.
+      - IDEA_NC_SEED_USERS=${IDEA_NC_SEED_USERS-teacher1:teachers learner1:learners}
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
       - MYSQL_HOST=nextcloud-db
