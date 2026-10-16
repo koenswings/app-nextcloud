@@ -1,7 +1,9 @@
 // Fake occ for demo/install-demo.sh. State: $FAKE_OCC (JSON {users:{name:{groups:[],pass}}, log:[]}).
 import fs from 'node:fs'
 const f = process.env.FAKE_OCC, st = JSON.parse(fs.readFileSync(f, 'utf8'))
-const a = process.argv.slice(2); st.log.push(a.join(' '))
+const a = process.argv.slice(2)
+if (a[0] === 'status') { console.log(`  - installed: ${process.env.FAKE_NOT_INSTALLED ? 'false' : 'true'}`); process.exit(0) }  // not logged
+st.log.push(a.join(' '))
 const save = () => fs.writeFileSync(f, JSON.stringify(st))
 const last = a.at(-1)
 switch (a[0]) {

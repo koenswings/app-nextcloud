@@ -17,7 +17,12 @@ The whole `docker-entrypoint-hooks.d/` folder is mounted read-only. Order on the
 
 Every later start runs only steps 3–4. All hooks exit 0 (fail open). richdocuments ships on the
 App Disk, so Office works fully offline (chosen over baking it into the image: no image rebuild,
-and existing installs get it too). The Office URL is `http://${ip}:9980`, the LAN IP the Engine
-passes; there is no Tailscale special case.
+and existing installs get it too). Office (CODE) publishes **no host port**: each instance has its own `code`
+service on its compose network, and the root entrypoint (`idea-files-entrypoint.sh`,
+`IDEA_COLLABORA_PROXY=http://code:9980`) makes Apache proxy `/browser`, `/hosting/*` and the
+`/cool` websocket to it. richdocuments gets `wopi_url=http://code:9980` (server side) and
+`public_wopi_url=http://${ip}:${port}` (this Nextcloud's own port on the LAN IP the Engine
+passes; no Tailscale special case). Two Nextclouds on one Pi therefore never fight over 9980.
+An instance installed from an older bundle keeps its own compose (host port 9980) unchanged.
 
 Tests: `node --test tests/` (fake occ + simulated entrypoint hook order).

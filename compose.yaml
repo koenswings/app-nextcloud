@@ -66,8 +66,14 @@ services:
       # Fallback is the IDEA default admin911! (<account name>911! scheme), never the random ${pass}.
       - NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-admin911!}
       - NEXTCLOUD_TRUSTED_DOMAINS=localhost ${hostname} ${hostname}.local ${ip}
-      # Office (CODE) is reached on the LAN IP the Engine passes as ${ip}; no Tailscale special case.
-      - IDEA_COLLABORA_URL=http://${ip}:9980
+      # Office (CODE) has NO host port (no fixed 9980 shared between instances): Apache in this
+      # container proxies /browser, /hosting and /cool to this instance's own `code` service
+      # (IDEA_COLLABORA_PROXY). The browser reaches Office on this Nextcloud's own port, on the
+      # LAN IP the Engine passes as ${ip} (no Tailscale special case); Nextcloud reaches CODE
+      # server-side on the internal compose network.
+      - IDEA_COLLABORA_URL=http://${ip}:${port}
+      - IDEA_COLLABORA_INTERNAL_URL=http://code:9980
+      - IDEA_COLLABORA_PROXY=http://code:9980
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
       # Written into the instance .env by the Engine on every start; empty with an older Engine (hook then does nothing)
@@ -98,10 +104,9 @@ services:
     image: koenswings/nextcloud-code:1.0-24.04.13.2
     restart: no
     pull_policy: never
-    ports:
-      - 9980:9980
+    # No host port: reached only through the nextcloud-app proxy and the backend network.
     environment:
-      - extra_params=--o:ssl.enable=false
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=false
     extra_hosts:
       - ${hostname}.local:${ip}
     networks:

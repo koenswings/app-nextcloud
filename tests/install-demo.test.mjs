@@ -17,12 +17,12 @@ function setup(instances = [structuredClone(real)], users = { admin: { groups: [
   writeFileSync(state, JSON.stringify({ instances, disks: [{ id: 'DISK1', name: 'D1', device: 'sdb1' }], commands: [] }))
   writeFileSync(occ, JSON.stringify({ users, log: [] }))
   const curl = join(dir, 'curl.sh')
-  writeFileSync(curl, `#!/bin/sh\necho "$@" >> ${dav}\n`, { mode: 0o755 })
+  writeFileSync(curl, `#!/bin/sh\ncase "$*" in *status.php*) exit 0 ;; esac\necho "$@" >> ${dav}\n`, { mode: 0o755 })
   const content = join(root, 'tests/fixtures/idea-demo')
   const run = (args = [], env = {}) => {
     const r = spawnSync('bash', [SCRIPT, '--content', content, ...args], { encoding: 'utf8', env: { ...process.env,
       ENGINE_CMD: `node ${join(root, 'tests/fake-engine.mjs')}`, FAKE_STATE: state,
-      OCC: `node ${join(root, 'tests/fake-occ-demo.mjs')}`, FAKE_OCC: occ, CURL: curl, ...env } })
+      OCC: `node ${join(root, 'tests/fake-occ-demo.mjs')}`, FAKE_OCC: occ, CURL: curl, DISKS_ROOT: join(dir, 'disks'), READY_STEP: '0', ...env } })
     const rd = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
     return { ...r, st: JSON.parse(rd(state)), occ: JSON.parse(rd(occ)), dav: rd(dav) }
   }
@@ -33,7 +33,7 @@ it('installs a new "Nextcloud Demo" (quoted --name), starts it, seeds users and 
   const { run } = setup()
   const r = run()
   assert.equal(r.status, 0, r.stderr)
-  assert.deepEqual(r.st.commands, ['installApp nextcloud-1.0 DISK1 --name "Nextcloud Demo"', 'startInstance nextcloud-demo DISK1'])
+  assert.deepEqual(r.st.commands, ['installApp nextcloud-1.0 DISK1 --source DISK1 --name "Nextcloud Demo" --fresh', 'startInstance nextcloud-demo DISK1'])
   assert.deepEqual(Object.keys(r.occ.users).sort(), [...DEMO_USERS].sort())
   for (const u of DEMO_USERS.slice(1)) assert.equal(r.occ.users[u].pass, `${u}911!`)
   assert.deepEqual(r.occ.users.teacher1.groups, ['teachers']); assert.deepEqual(r.occ.users.learner2.groups, ['learners'])
@@ -94,4 +94,23 @@ it('more than one demo instance -> exit 10', () => {
 it('is sourceable from a hook without running', () => {
   const r = spawnSync('bash', ['-c', `source ${SCRIPT} && type main >/dev/null && echo sourced`], { encoding: 'utf8' })
   assert.equal(r.stdout.trim(), 'sourced')
+})
+
+it('--source names the bundle disk; installApp always carries --fresh', () => {
+  const { run } = setup()
+  const r = run(['--disk', 'DISK1', '--source', 'APPS', '--app', 'nextcloud-abc'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.st.commands[0], 'installApp nextcloud-abc DISK1 --source APPS --name "Nextcloud Demo" --fresh')
+})
+
+it('refuses an instance whose compose.yaml instanceName is not "Nextcloud Demo" (exit 11), nothing seeded', () => {
+  const { run } = setup()
+  const r = run([], { FAKE_COMPOSE_NAME: 'Nextcloud' })
+  assert.equal(r.status, 11, r.stderr); assert.deepEqual(r.occ.log, []); assert.equal(r.dav, '')
+})
+
+it('waits for the first-start self-install; never seeds a Nextcloud that is not installed (exit 14)', () => {
+  const { run } = setup()
+  const r = run([], { FAKE_NOT_INSTALLED: '1', READY_WAIT: '2' })
+  assert.equal(r.status, 14, r.stderr); assert.deepEqual(r.occ.log, []); assert.equal(r.dav, '')
 })

@@ -9,6 +9,15 @@ const [verb, cmd] = process.argv.slice(2)
 const save = () => fs.writeFileSync(file, JSON.stringify(st, null, 1))
 const parse = s => process.env.FAKE_OLD_PARSER === '1' ? s.trim().split(/\s+/)
   : [...s.matchAll(/"([^"]*)"|(\S+)/g)].map(m => m[1] ?? m[2])
+// Each instance gets a compose.yaml under $DISKS_ROOT with its x-app.instanceName, like the Engine
+// writes it (FAKE_COMPOSE_NAME overrides the written name, to test the compose guard).
+for (const i of st.instances) {
+  if (!process.env.DISKS_ROOT) break
+  const d = `${process.env.DISKS_ROOT}/${i.device}/instances/${i.id}`
+  if (fs.existsSync(`${d}/compose.yaml`)) continue
+  fs.mkdirSync(d, { recursive: true })
+  fs.writeFileSync(`${d}/compose.yaml`, `x-app:\n  name: nextcloud\n  instanceName: ${JSON.stringify(process.env.FAKE_COMPOSE_NAME ?? i.name)}\n`)
+}
 if (verb === 'list') console.log(JSON.stringify(st.instances))
 else if (verb === 'disks') console.log(JSON.stringify(st.disks))
 else if (verb === 'send') {

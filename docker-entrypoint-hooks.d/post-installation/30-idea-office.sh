@@ -8,7 +8,10 @@
 # if the app code is still not present the hook logs a warning and leaves Office unconfigured.
 #
 # Env:
-#   IDEA_COLLABORA_URL  http://<LAN IP from Engine>:9980 (browser + server URL). Empty → skip.
+#   IDEA_COLLABORA_URL  browser URL of Office: this Nextcloud (http://<LAN IP>:<port>), which
+#                       proxies CODE (idea-files-entrypoint.sh). Empty → skip.
+#   IDEA_COLLABORA_INTERNAL_URL  server-to-server URL of CODE (http://code:9980 on the compose
+#                       network). Empty → IDEA_COLLABORA_URL (old single-URL setup).
 #   OCC                 occ-compatible binary for tests (default: php occ)
 set -u
 
@@ -45,7 +48,9 @@ set_app() { # key value — write only when different
 	run_occ config:app:set richdocuments "$1" --value="$2" >/dev/null 2>&1 \
 		&& log "set $1=$2" || log "WARNING could not set $1"
 }
-set_app wopi_url "$URL"
+INTERNAL="${IDEA_COLLABORA_INTERNAL_URL:-$URL}"
+case "$INTERNAL" in http://*|https://*) ;; *) INTERNAL="$URL" ;; esac
+set_app wopi_url "$INTERNAL"
 set_app public_wopi_url "$URL"
 case "$URL" in http://*) set_app disable_certificate_verification yes ;; esac
 

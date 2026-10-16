@@ -10,7 +10,10 @@
 #
 # Flow:
 #   1. pick the instance whose display name is exactly "Nextcloud Demo" (more than one: exit 10)
-#   2. none -> installApp <app> <disk> --name "Nextcloud Demo" (no --source: clean builder bundle)
+#   2. none -> installApp <app> <disk> --source <disk> --name "Nextcloud Demo" --fresh
+#      (--fresh: the app bundle, never a copy of a school's data; without the bundle on
+#      <source> the Engine falls back to its clean GitHub build). Refused unless the new
+#      folder's compose x-app.instanceName is exactly "Nextcloud Demo".
 #   3. startInstance if it is not Running (Nextcloud seeds through occ/WebDAV on a running server)
 #   4. guard: occ user:list may only hold the demo accounts (else exit 6, nothing changed)
 #   5. groups teachers/learners; users admin, teacher1, teacher2, learner1..3 with password
@@ -19,7 +22,8 @@
 #      teacher1 and teacher2 (rerun overwrites the same paths: no duplicates)
 #
 # Usage: demo/install-demo.sh [--engine-dir DIR] [--disk ID] [--instance ID] [--content DIR]
-#                             [--app ID] [--force-passwords] [--dry-run]
+#                             [--source ID] [--app ID] [--force-passwords] [--dry-run]
+#   --source ID    disk holding apps/<app> (default: the target disk)  [$DEMO_SOURCE]
 #   --content DIR  folder holding "Worksheets" and "Teacher Notes"  [$DEMO_CONTENT]
 # Env for hooks/tests: ENGINE_CMD, OCC (command prefix replacing "docker exec -u 33 <c> php occ"),
 #   NC_CONTAINER, CURL (default curl), NC_URL (default http://127.0.0.1:<port>), DOCKER.
@@ -27,7 +31,7 @@
 #
 # Exit codes: 0 ok | 2 usage | 3 Engine/store unreachable | 6 instance holds non-demo users |
 #   10 more than one demo instance | 11 target refused | 12 installApp Failed |
-#   13 no instance with the demo name after install | 15 occ seeding failed |
+#   13 no instance with the demo name after install | 14 not ready in time | 15 occ seeding failed |
 #   16 WebDAV upload failed | 17 startInstance Failed | 18 no/ambiguous target disk
 set -uo pipefail
 
@@ -36,7 +40,25 @@ DEMO_USERS="admin teacher1 teacher2 learner1 learner2 learner3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { local c=$1; shift; echo "ERROR: $*" >&2; exit "$c"; }
-engine() { if [ -n "${ENGINE_CMD:-}" ]; then $ENGINE_CMD "$@"; else node "$HERE/engine-cmd.mjs" "$ENGINE_DIR" "$@"; fi; }
+engine() {
+  if [ -n "${ENGINE_CMD:-}" ]; then $ENGINE_CMD "$@"; return; fi
+  # engine-cmd.mjs needs the Engine's node_modules: run it from a temp dir that links them.
+  if [ -z "${EC_DIR:-}" ]; then
+    EC_DIR="$(mktemp -d)"; trap 'rm -rf "$EC_DIR"' EXIT
+    cp "$HERE/engine-cmd.mjs" "$EC_DIR/"; ln -s "$ENGINE_DIR/node_modules" "$EC_DIR/node_modules"
+  fi
+  (cd "$EC_DIR" && node engine-cmd.mjs "$ENGINE_DIR" "$@")
+}
+# x-app.instanceName of an instance folder (quotes stripped)
+compose_name() { sed -n 's/^  instanceName:[[:space:]]*//p' "$1/compose.yaml" 2>/dev/null | head -1 | sed -e "s/^[\"']//" -e "s/[\"']\$//"; }
+wait_ready() {  # first start self-installs (minutes on a Pi): occ status installed + status.php
+  [ "$DRY" = 1 ] && return 0
+  local n="${READY_WAIT:-120}"
+  for _ in $(seq "$n"); do occ status 2>/dev/null | grep -q "installed: true" && break; sleep "${READY_STEP:-5}"; done
+  occ status 2>/dev/null | grep -q "installed: true" || return 1
+  for _ in $(seq "$n"); do ${CURL:-curl} -sf -o /dev/null "$NC_URL/status.php" && return 0; sleep "${READY_STEP:-5}"; done
+  return 1
+}
 pick() {  # $1 JSON, $2 field, $3 value: "id<TAB>name<TAB>storedOn<TAB>status<TAB>port" per match
   printf '%s' "$1" | node -e '
     const [f, v] = process.argv.slice(1); let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
@@ -97,11 +119,12 @@ enc() { node -e 'console.log(process.argv[1].split("/").map(encodeURIComponent).
 
 main() {
   ENGINE_DIR="${ENGINE_DIR:-}"; DISK="${DEMO_DISK:-}"; TARGET=""; CONTENT="${DEMO_CONTENT:-}"
-  APP="${DEMO_APP:-nextcloud-1.0}"; DRY=0; FORCE=0; OCC_ENV=()
+  SRC="${DEMO_SOURCE:-}"; APP="${DEMO_APP:-nextcloud-1.0}"; DRY=0; FORCE=0; OCC_ENV=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --engine-dir) ENGINE_DIR="${2:?}"; shift 2 ;;
       --disk) DISK="${2:?}"; shift 2 ;;
+      --source) SRC="${2:?}"; shift 2 ;;
       --instance) TARGET="${2:?}"; shift 2 ;;
       --content) CONTENT="${2:?}"; shift 2 ;;
       --app) APP="${2:?}"; shift 2 ;;
@@ -129,7 +152,7 @@ main() {
       DISK="$(engine disks | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s||"[]");if(d.length===1)console.log(d[0].id)})')"
       [ -n "$DISK" ] || die 18 "pass --disk <id>: not exactly one disk is docked"
     fi
-    send "installApp $APP $DISK --name \"$DEMO_NAME\"" || die 12 "installApp Failed (see the Engine command log)"
+    send "installApp $APP $DISK --source ${SRC:-$DISK} --name \"$DEMO_NAME\" --fresh" || die 12 "installApp Failed (see the Engine command log)"
     [ "$DRY" = 1 ] && { echo '{"result":"dry-run"}'; return 0; }
     list="$(engine list)" || die 3 "Engine store not reachable"
     rows="$(pick "$list" name "$DEMO_NAME")"
@@ -137,12 +160,18 @@ main() {
     result=installed
   fi
   IFS=$'\t' read -r id name disk status port <<<"$rows"
+  if [ "$DRY" != 1 ]; then
+    local dev; dev="$(engine list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const i=JSON.parse(s||"[]").find(i=>i&&i.id===process.argv[1]);if(i)console.log(i.device??"")})' "$id")"
+    local inst="${DISKS_ROOT:-/disks}/$dev/instances/$id"
+    [ "$(compose_name "$inst")" = "$DEMO_NAME" ] || die 11 "refusing $id: compose x-app.instanceName is '$(compose_name "$inst")', not '$DEMO_NAME'"
+  fi
   if [ "$status" != "Running" ]; then send "startInstance $id $disk" || die 17 "startInstance Failed"; fi
 
   NC_URL="${NC_URL:-http://127.0.0.1:$port}"
   if [ -z "${OCC:-}" ] && [ "$DRY" != 1 ]; then
     CONTAINER="${NC_CONTAINER:-$(container_for "$id")}"; [ -n "$CONTAINER" ] || die 15 "no running nextcloud-app container for $id"
   fi
+  wait_ready || die 14 "Nextcloud $id not installed/answering in time"
   local rc=0; seed_users || rc=$?
   [ $rc = 0 ] || die $rc "user seeding stopped (exit $rc)"
   upload || die 16 "WebDAV upload failed"

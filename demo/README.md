@@ -13,9 +13,11 @@ demo/install-demo.sh --engine-dir ~/idea/agent-engine-dev --content /path/to/ide
 
 1. Find the instance named exactly `Nextcloud Demo` (two: refuse, exit 10). `--instance <id>` is refused
    unless it is that instance (exit 11).
-2. None: `installApp nextcloud-1.0 <disk> --name "Nextcloud Demo"`, no `--source` (clean builder bundle,
-   never a school's data). If the Engine did not keep the name, stop (exit 13).
-3. `startInstance` if it is not Running.
+2. None: `installApp <app> <disk> --source <source disk> --name "Nextcloud Demo" --fresh` (`--source`
+   defaults to the target disk; `--fresh` = the whole app bundle, never a school's data; no bundle on the
+   source → the Engine's clean GitHub build). If the Engine did not keep the name, stop (exit 13); a folder
+   whose compose `x-app.instanceName` is not exactly `Nextcloud Demo` is refused (exit 11).
+3. `startInstance` if it is not Running, then wait for the first-start self-install (exit 14 on timeout).
 4. Guard: `occ user:list` may only contain the demo accounts, otherwise refuse with nothing changed (exit 6).
 5. Groups `teachers`/`learners`; users `admin`, `teacher1`, `teacher2` (teachers), `learner1..3` (learners)
    with password `<name>911!` (`occ user:add --password-from-env`). Existing users keep their password
@@ -28,7 +30,8 @@ Exit codes: 0 ok, 2 usage, 3 Engine unreachable, 6 non-demo users present, 10 tw
 17 startInstance Failed, 18 no/ambiguous disk. Last stdout line is JSON. Sourcing the script defines the
 functions without running it (Engine hook / Console demo button, idea#235).
 
-**Depends on the Engine fix (Axle, pending):** quote-aware `installApp --name "Nextcloud Demo"` and the
-instance name in the store record. Until then the script fails closed (exit 13).
+**Needs agent-engine-dev#221** (quote-aware `--name`, `--fresh`). An older Engine drops the name and the
+script fails closed (exit 13). Office: each instance has its own CODE behind its own Nextcloud port
+(no host port 9980), see docs/first-start.md.
 
 Tests: `node --test tests/` (`tests/install-demo.test.mjs` mocks the Engine queue, occ and WebDAV).
