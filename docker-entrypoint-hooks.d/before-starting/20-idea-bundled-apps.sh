@@ -1,0 +1,1 @@
+../post-installation/20-idea-bundled-apps.sh
