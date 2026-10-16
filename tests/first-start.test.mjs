@@ -61,7 +61,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 it('compose: auto-install env set, whole hooks dir mounted, no Office before install', () => {
   const c = readFileSync(join(root, 'compose.yaml'), 'utf8')
   for (const k of ['NEXTCLOUD_ADMIN_USER=', 'NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-admin911!}', 'MYSQL_HOST=',
-    'IDEA_COLLABORA_URL=http://${ip}:9980', './bundled-apps:/idea-bundled-apps:ro'])
+    'IDEA_COLLABORA_URL=http://${ip}:${port}', 'IDEA_COLLABORA_INTERNAL_URL=http://code:9980', './bundled-apps:/idea-bundled-apps:ro'])
     assert.ok(c.includes(k), k)
   assert.ok(c.includes('./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro'))
   assert.ok(!existsSync(join(HOOKS, 'pre-installation')), 'nothing may need occ before install')
@@ -93,7 +93,23 @@ it('second start: no install, Office idempotent (no writes)', () => {
   const later = state().calls.slice(n).map(c => c[0])
   assert.ok(!later.includes('maintenance:install'))
   assert.ok(!later.includes('config:app:set') && !later.includes('config:system:set'), later.join(','))
+  assert.ok(later.includes('richdocuments:activate-config'), 'discovery refreshed on every start')
   assert.equal(state().mounts.length, 1)
+})
+
+it('split URLs: wopi_url is the internal CODE address, public_wopi_url the Nextcloud proxy', () => {
+  setState({ installed: false, appsPresent: ['richdocuments', 'files_external'] })
+  start(env({ ...creds, IDEA_COLLABORA_URL: 'http://10.0.0.5:61000', IDEA_COLLABORA_INTERNAL_URL: 'http://code:9980' }))
+  assert.equal(state().app.richdocuments.wopi_url, 'http://code:9980')
+  assert.equal(state().app.richdocuments.public_wopi_url, 'http://10.0.0.5:61000')
+})
+
+it('Office: discovery is fetched (richdocuments:activate-config) after the URLs are set, every start', () => {
+  setState({ installed: false, appsPresent: ['richdocuments', 'files_external'] })
+  start(env({ ...creds, IDEA_COLLABORA_INTERNAL_URL: 'http://code:9980' }))
+  const calls = state().calls.map(c => c[0])
+  assert.ok(calls.lastIndexOf('richdocuments:activate-config') > calls.lastIndexOf('config:app:set'))
+  assert.equal(state().app.richdocuments.discovery_fetched, 'http://code:9980')
 })
 
 it('IP change: Office URL follows on next start', () => {

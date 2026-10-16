@@ -27,6 +27,7 @@ switch (cmd) {
   case 'config:app:set': (s.app[a[1]] ??= {})[a[2]] = val(); out(0)
   case 'config:system:get': { const v = s.system[a[1]]; v === undefined ? out(1) : out(0, String(v)) }
   case 'config:system:set': s.system[a[1]] = a.includes('--type=boolean') ? val() === 'true' : val(); out(0)
+  case 'richdocuments:activate-config': (s.app.richdocuments ??= {}).discovery_fetched = s.app.richdocuments.wopi_url ?? ''; out(0)
   case 'files_external:list': out(0, JSON.stringify(s.mounts))
   case 'files_external:create': {
     const id = s.mounts.length + 1

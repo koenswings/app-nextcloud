@@ -8,7 +8,10 @@
 # if the app code is still not present the hook logs a warning and leaves Office unconfigured.
 #
 # Env:
-#   IDEA_COLLABORA_URL  http://<LAN IP from Engine>:9980 (browser + server URL). Empty → skip.
+#   IDEA_COLLABORA_URL  browser URL of Office: this Nextcloud (http://<LAN IP>:<port>), which
+#                       proxies CODE (idea-files-entrypoint.sh). Empty → skip.
+#   IDEA_COLLABORA_INTERNAL_URL  server-to-server URL of CODE (http://code:9980 on the compose
+#                       network). Empty → IDEA_COLLABORA_URL (old single-URL setup).
 #   OCC                 occ-compatible binary for tests (default: php occ)
 set -u
 
@@ -45,7 +48,9 @@ set_app() { # key value — write only when different
 	run_occ config:app:set richdocuments "$1" --value="$2" >/dev/null 2>&1 \
 		&& log "set $1=$2" || log "WARNING could not set $1"
 }
-set_app wopi_url "$URL"
+INTERNAL="${IDEA_COLLABORA_INTERNAL_URL:-$URL}"
+case "$INTERNAL" in http://*|https://*) ;; *) INTERNAL="$URL" ;; esac
+set_app wopi_url "$INTERNAL"
 set_app public_wopi_url "$URL"
 case "$URL" in http://*) set_app disable_certificate_verification yes ;; esac
 
@@ -53,6 +58,15 @@ case "$URL" in http://*) set_app disable_certificate_verification yes ;; esac
 if [ "$(run_occ config:system:get allow_local_remote_servers 2>/dev/null || true)" != "true" ]; then
 	run_occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null 2>&1 \
 		&& log "set allow_local_remote_servers=true" || true
+fi
+# richdocuments reads the CODE discovery only from its appdata cache, which is filled by
+# richdocuments:activate-config (or a background job that an offline Pi may never run).
+# Without it every "open document" fails (Parser.php: xpath() on false). Refresh it on every
+# start, after the URLs are set; fail open.
+if run_occ richdocuments:activate-config >/dev/null 2>&1; then
+	log "fetched Office discovery (richdocuments:activate-config)"
+else
+	log "WARNING richdocuments:activate-config failed (CODE not up yet?) — Office may not open until it runs"
 fi
 log "done"
 exit 0
