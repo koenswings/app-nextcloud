@@ -10,7 +10,7 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: 6900555403c84463e2c8ac53e49cc9c08536669e
+  version: b8ad4382b5f77c1de84cdf05ae822d4041b02b3c
   instanceName: nextcloud
   filesMount:
     path: /mnt/idea-files
@@ -40,6 +40,8 @@ services:
       - ./docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:/docker-entrypoint-hooks.d/before-starting/10-idea-files.sh:ro
       # USB stick reconcile (idea#193), run by the Engine via docker exec.
       - ./usb-sync.sh:/idea/usb-sync.sh:ro
+      # Sets trusted_domains for the Pi it runs on, on every start (agent-engine-dev#163)
+      - ./docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:/docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:ro
     ports:
       - ${port}:80
     environment:
@@ -49,6 +51,9 @@ services:
       - MYSQL_HOST=nextcloud-db
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
+      # Written into the instance .env by the Engine on every start; empty with an older Engine (hook then does nothing)
+      - IDEA_HOSTNAME=${IDEA_HOSTNAME:-}
+      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-}
       # Files Disk and USB stick storages are visible to this group + admin only (created if missing).
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
     networks:
