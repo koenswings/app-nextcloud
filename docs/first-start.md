@@ -22,7 +22,9 @@ service on its compose network, and the root entrypoint (`idea-files-entrypoint.
 `IDEA_COLLABORA_PROXY=http://code:9980`) makes Apache proxy `/browser`, `/hosting/*` and the
 `/cool` websocket to it. richdocuments gets `wopi_url=http://code:9980` (server side) and
 `public_wopi_url=http://${ip}:${port}` (this Nextcloud's own port on the LAN IP the Engine
-passes; no Tailscale special case). Two Nextclouds on one Pi therefore never fight over 9980.
+passes; no Tailscale special case). CODE gets `server_name=${ip}:${port}`, so the editor URL in its discovery is this Nextcloud's
+proxy address (richdocuments:activate-config then detects the same public URL). Two Nextclouds
+on one Pi therefore never fight over 9980.
 An instance installed from an older bundle keeps its own compose (host port 9980) unchanged.
 
 Tests: `node --test tests/` (fake occ + simulated entrypoint hook order).

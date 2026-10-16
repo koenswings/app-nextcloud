@@ -114,3 +114,10 @@ it('waits for the first-start self-install; never seeds a Nextcloud that is not 
   const r = run([], { FAKE_NOT_INSTALLED: '1', READY_WAIT: '2' })
   assert.equal(r.status, 14, r.stderr); assert.deepEqual(r.occ.log, []); assert.equal(r.dav, '')
 })
+
+it('passes an Engine <name>@<ref> app id through unchanged (agent-engine-dev#221)', () => {
+  const { run } = setup()
+  const r = run(['--app', 'nextcloud@41d039dc5fcb7560837e2af8d2ddb484c7cd0b75'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.st.commands[0], 'installApp nextcloud@41d039dc5fcb7560837e2af8d2ddb484c7cd0b75 DISK1 --source DISK1 --name "Nextcloud Demo" --fresh')
+})

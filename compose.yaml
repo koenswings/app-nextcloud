@@ -107,6 +107,10 @@ services:
     # No host port: reached only through the nextcloud-app proxy and the backend network.
     environment:
       - extra_params=--o:ssl.enable=false --o:ssl.termination=false
+      # The editor URL CODE advertises in its discovery (urlsrc) must be the address the browser
+      # uses: this Nextcloud's own port, which proxies CODE. Nextcloud fetches the discovery from
+      # http://code:9980, so without server_name the browser would be sent to code:9980.
+      - server_name=${ip}:${port}
     extra_hosts:
       - ${hostname}.local:${ip}
     networks:

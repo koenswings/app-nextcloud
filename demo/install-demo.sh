@@ -24,6 +24,7 @@
 # Usage: demo/install-demo.sh [--engine-dir DIR] [--disk ID] [--instance ID] [--content DIR]
 #                             [--source ID] [--app ID] [--force-passwords] [--dry-run]
 #   --source ID    disk holding apps/<app> (default: the target disk)  [$DEMO_SOURCE]
+#   --app ID       Engine app id, e.g. nextcloud-1.0 or nextcloud@<sha|branch> (agent-engine-dev#221)
 #   --content DIR  folder holding "Worksheets" and "Teacher Notes"  [$DEMO_CONTENT]
 # Env for hooks/tests: ENGINE_CMD, OCC (command prefix replacing "docker exec -u 33 <c> php occ"),
 #   NC_CONTAINER, CURL (default curl), NC_URL (default http://127.0.0.1:<port>), DOCKER.
