@@ -23,7 +23,7 @@ const writes = () => state().calls.filter(c => c[0] !== 'status' && c[0] !== 'co
 const run = (env, cwd) => {
   const r = spawnSync('sh', [HOOK], {
     cwd,
-    env: { PATH: process.env.PATH, OCC: FAKE_OCC, FAKE_OCC_STATE: statePath, ...env },
+    env: { PATH: process.env.PATH, OCC: FAKE_OCC, FAKE_OCC_STATE: statePath, IDEA_TRUST_LAN_SUBNET: '0', ...env },
     encoding: 'utf8',
   })
   assert.equal(r.status, 0, `hook must exit 0 (fail open): ${r.stderr}${r.stdout}`)
@@ -143,5 +143,25 @@ describe('20-idea-trusted-domains.sh', () => {
     assert.deepEqual(state().system.idea_trusted_domains_managed, ['idea03', 'idea03.local'])
     const dels = state().calls.filter(c => c[0] === 'config:system:delete' && c[1] === 'trusted_domains').map(c => Number(c[2]))
     assert.deepEqual(dels, [5, 4, 3])
+  })
+
+  it('LAN subnet (default on): adds a.b.c.* for private IPv4s only, idempotent, replaced when the network changes', () => {
+    setState({ system: { trusted_domains: ['localhost'] } })
+    run({ IDEA_HOSTNAME: 'sunny-robin', IDEA_HOST_IPS: '10.42.0.4,100.96.98.10', IDEA_TRUST_LAN_SUBNET: '1' }, dir)
+    assert.deepEqual(td(), ['localhost', 'sunny-robin', 'sunny-robin.local', '10.42.0.4', '10.42.0.*', '100.96.98.10'])
+    const n = state().calls.length
+    run({ IDEA_HOSTNAME: 'sunny-robin', IDEA_HOST_IPS: '10.42.0.4,100.96.98.10', IDEA_TRUST_LAN_SUBNET: '1' }, dir)
+    assert.deepEqual(td(), ['localhost', 'sunny-robin', 'sunny-robin.local', '10.42.0.4', '10.42.0.*', '100.96.98.10'])
+    assert.ok(state().calls.slice(n).every(c => c[0] === 'status' || c[0] === 'config:system:get'), 'second run writes nothing')
+    run({ IDEA_HOSTNAME: 'sunny-robin', IDEA_HOST_IPS: '192.168.1.20', IDEA_TRUST_LAN_SUBNET: '1' }, dir)
+    assert.deepEqual(td(), ['localhost', 'sunny-robin', 'sunny-robin.local', '192.168.1.20', '192.168.1.*'])
+  })
+
+  it('an admin hand-added subnet (Atlas 10.42.0.*) is not duplicated and survives', () => {
+    setState({ system: { trusted_domains: ['localhost', 'sunny-robin.local', '10.99.0.138', '10.42.0.*'] } })
+    run({ IDEA_HOSTNAME: 'sunny-robin', IDEA_HOST_IPS: '10.42.0.4', IDEA_TRUST_LAN_SUBNET: '1' }, dir)
+    const t = td()
+    assert.equal(t.filter(d => d === '10.42.0.*').length, 1)
+    assert.ok(t.includes('10.42.0.4') && t.includes('10.99.0.138'))
   })
 })
