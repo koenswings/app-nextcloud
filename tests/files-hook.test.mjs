@@ -185,3 +185,36 @@ it('admin-created storage under the root (present or absent) is never touched', 
   assert.deepEqual(state().mounts.find(m => m.mount_id === 9), adm)
   assert.ok(!state().calls.some(c => String(c[1]) === '9'))
 })
+
+it('#240 superseded: own storage whose folder is gone, next to a live own storage with the same name, is deleted', () => {
+  const live = join(filesRoot, 'school-files-4moutq'); mkdirSync(live, { recursive: true })
+  const dead = { mount_id: 1, mount_point: '/School Files', configuration: { datadir: join(filesRoot, 'school-files-AA0000') }, options: { idea_files: 1 }, applicable_groups: [] }
+  const cur = { mount_id: 3, mount_point: '/School Files', configuration: { datadir: live }, options: { idea_files: 1, enable_sharing: true, filesystem_check_changes: 1 }, applicable_groups: ['teachers', 'admin'] }
+  setState({ mounts: [dead, cur], groups: { teachers: [], admin: [] } })
+  assert.match(run(), /deleted superseded own storage id=1/)
+  const ids = () => state().mounts.map(m => m.mount_id)
+  assert.ok(!ids().includes(1) && ids().includes(3), JSON.stringify(ids()))
+  // idempotent: nothing more to delete
+  const before = ids()
+  assert.doesNotMatch(run(), /deleted superseded/)
+  assert.deepEqual(ids(), before)
+})
+
+it('#240 not superseded: folder gone but no live twin with that name → kept (undocked disk)', () => {
+  const live = join(filesRoot, 'other-disk'); mkdirSync(live, { recursive: true })
+  const gone = { mount_id: 5, mount_point: '/School Files', configuration: { datadir: join(filesRoot, 'school-files-AA0000') }, options: { idea_files: 1 }, applicable_groups: [] }
+  const other = { mount_id: 6, mount_point: '/Library', configuration: { datadir: live }, options: { idea_files: 1 }, applicable_groups: [] }
+  setState({ mounts: [gone, other], groups: { teachers: [], admin: [] } })
+  assert.match(run(), /keep own storage id=5/)
+  assert.ok(state().mounts.some(m => m.mount_id === 5))
+  assert.ok(!state().calls.some(c => c[0] === 'files_external:delete'))
+})
+
+it('#240 admin storage with the same name and a gone folder is never deleted', () => {
+  const live = join(filesRoot, 'school-files-4moutq'); mkdirSync(live, { recursive: true })
+  const admin = { mount_id: 8, mount_point: '/School Files', configuration: { datadir: join(filesRoot, 'gone-admin') }, options: {}, applicable_groups: [] }
+  const cur = { mount_id: 3, mount_point: '/School Files', configuration: { datadir: live }, options: { idea_files: 1 }, applicable_groups: [] }
+  setState({ mounts: [admin, cur], groups: { teachers: [], admin: [] } })
+  run()
+  assert.ok(state().mounts.some(m => m.mount_id === 8))
+})

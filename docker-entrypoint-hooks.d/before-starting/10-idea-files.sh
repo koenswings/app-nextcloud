@@ -254,8 +254,19 @@ done
 # entry unchanged. Nextcloud shows it unavailable; on redock the folder returns at
 # the same datadir, the create loop above skips it (datadir already listed), and
 # the same mount id — with its shares and applicable groups — is reused.
-# There is no definitive "disk retired" signal, so this hook never deletes.
+# The only deletion is a superseded entry (see live_mps above): folder gone AND a live
+# own storage at the same mount point.
 list_json="$(run_occ files_external:list --output=json 2>/dev/null || echo '[]')"
+# Superseded storages (agent-engine-dev#240): a disk that was erased and re-made as a new
+# Files Disk comes back under a NEW folder with the same display name, so the old own
+# storage (folder gone) sits next to the live one at the same mount point. Such an entry
+# can never be reused, so it is deleted. An own storage whose folder is gone WITHOUT a live
+# twin at the same mount point is still kept (undocked disk; idea#193).
+live_mps="$(printf '%s' "$list_json" | parse_list_json | while IFS='|' read -r id mp datadir idea rest; do
+	[ "$idea" = "1" ] || continue
+	case "$datadir" in "$IDEA_FILES_ROOT"/*) ;; *) continue ;; esac
+	if [ -d "$datadir" ]; then printf '%s\n' "$mp"; fi
+done || true)"
 printf '%s' "$list_json" | parse_list_json | while IFS= read -r line; do
 	[ -n "$line" ] || continue
 	id="${line%%|*}"; rest="${line#*|}"
@@ -271,6 +282,12 @@ printf '%s' "$list_json" | parse_list_json | while IFS= read -r line; do
 	if [ -d "$datadir" ]; then
 		# Own storages that are docked: sharing, check-changes, teachers+admin.
 		ensure_own "$id" "$share" "$groups"
+	elif [ -n "$mp" ] && printf '%s\n' "$live_mps" | grep -Fxq -- "$mp"; then
+		if run_occ files_external:delete -y "$id" >/dev/null 2>&1; then
+			echo "idea-files: deleted superseded own storage id=$id (/$mp → $datadir gone; a live storage has the same name)"
+		else
+			echo "idea-files: WARNING could not delete superseded storage id=$id"
+		fi
 	else
 		echo "idea-files: keep own storage id=$id (disk not docked): $datadir"
 	fi
