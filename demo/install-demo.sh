@@ -36,6 +36,15 @@
 #   16 WebDAV upload failed | 17 startInstance Failed | 18 no/ambiguous target disk
 set -uo pipefail
 
+# Instance folder (idea#247 kit Engines): a data disk keeps instances in
+# $DISKS_ROOT/<device>/instances/<id>; the Engine's system disk keeps them in /instances/<id>.
+instance_dir() {  # $1 device, $2 instance id
+  local d="${DISKS_ROOT:-/disks}/$1/instances/$2" sys="${SYSTEM_INSTANCES_ROOT:-/instances}/$2"
+  if [ ! -d "$d" ] && [ -d "$sys" ]; then d="$sys"; fi
+  printf '%s\n' "$d"
+}
+
+
 DEMO_NAME="Nextcloud Demo"
 DEMO_USERS="admin teacher1 teacher2 learner1 learner2 learner3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -165,7 +174,7 @@ main() {
   IFS=$'\t' read -r id name disk status port <<<"$rows"
   if [ "$DRY" != 1 ]; then
     local dev; dev="$(engine list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const i=JSON.parse(s||"[]").find(i=>i&&i.id===process.argv[1]);if(i)console.log(i.device??"")})' "$id")"
-    local inst="${DISKS_ROOT:-/disks}/$dev/instances/$id"
+    local inst; inst="$(instance_dir "$dev" "$id")"
     [ "$(compose_name "$inst")" = "$DEMO_NAME" ] || die 11 "refusing $id: compose x-app.instanceName is '$(compose_name "$inst")', not '$DEMO_NAME'"
   fi
   if [ "$status" != "Running" ]; then send "startInstance $id $disk" || die 17 "startInstance Failed"; fi
