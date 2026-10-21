@@ -11,6 +11,8 @@
 # Env (written into the instance .env by the Engine on every start):
 #   IDEA_HOSTNAME   bare hostname of the Pi (e.g. idea03); the hook adds <h>.local
 #   IDEA_HOST_IPS   comma-separated IPv4 addresses of the Pi (LAN, Wi-Fi, Tailscale), no ports
+#   IDEA_TRUST_LAN_SUBNET  1 (default): also trust a.b.c.* for every private IPv4
+#                   (10/8, 172.16/12, 192.168/16); 0: exact addresses only
 #   OCC             path to a single occ-compatible binary (tests; default `php occ`)
 #
 # Rules:
@@ -80,6 +82,9 @@ for ip in $IPS_RAW; do
 	[ -z "$ip" ] && continue
 	if printf '%s' "$ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
 		desired="$(append "$desired" "$ip")"
+		if [ "${IDEA_TRUST_LAN_SUBNET:-1}" = "1" ] && printf '%s' "$ip" | grep -Eq '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)'; then
+			desired="$(append "$desired" "${ip%.*}.*")"
+		fi
 	else
 		log "ignoring '$ip' in IDEA_HOST_IPS (not an IPv4 address)"
 	fi

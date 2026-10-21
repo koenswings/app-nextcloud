@@ -77,8 +77,13 @@ services:
       - PHP_UPLOAD_LIMIT=10G
       - PHP_MEMORY_LIMIT=512M
       # Written into the instance .env by the Engine on every start; empty with an older Engine (hook then does nothing)
-      - IDEA_HOSTNAME=${IDEA_HOSTNAME:-}
-      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-}
+      # The Engine writes hostname= and ip= into the instance .env on every start; fall back to them so the
+      # trusted-domains hook always knows this Pi (kit 2026-10-17: both were empty, Atlas hand-added 10.42.0.*).
+      - IDEA_HOSTNAME=${IDEA_HOSTNAME:-${hostname:-}}
+      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-${ip:-}}
+      # Also trust the /24 of each private IPv4 (e.g. 10.42.0.*), so a school reaching this Pi by
+      # another address on its LAN is not refused. Set to 0 to trust exact addresses only.
+      - IDEA_TRUST_LAN_SUBNET=${IDEA_TRUST_LAN_SUBNET:-1}
       # Files Disk and USB stick storages are visible to this group + admin only (created if missing).
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
     networks:
