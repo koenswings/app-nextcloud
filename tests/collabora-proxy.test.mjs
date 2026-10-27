@@ -17,8 +17,8 @@ it('compose: CODE publishes no host port (no shared 9980), Office goes through t
   assert.ok(!/9980:9980/.test(compose), 'no fixed 9980 host port anywhere')
   assert.match(service('code'), /ssl\.enable=false --o:ssl\.termination=false/)
   assert.match(service('code'), /- backend/)
-  assert.match(service('code'), /server_name=\$\{ip\}:\$\{port\}/, 'CODE advertises the Nextcloud proxy address')
-  assert.match(compose, /IDEA_COLLABORA_URL=http:\/\/\$\{ip\}:\$\{port\}/)
+  assert.match(service('code'), /server_name=\$\{IDEA_PUBLIC_HOST:-\$\{ip\}\}:\$\{port\}/, 'CODE advertises the Nextcloud proxy address')
+  assert.match(compose, /IDEA_COLLABORA_URL=http:\/\/\$\{IDEA_PUBLIC_HOST:-\$\{ip\}\}:\$\{port\}/)
   assert.match(compose, /IDEA_COLLABORA_PROXY=http:\/\/code:9980/)
 })
 

@@ -28,3 +28,14 @@ on one Pi therefore never fight over 9980.
 An instance installed from an older bundle keeps its own compose (host port 9980) unchanged.
 
 Tests: `node --test tests/` (fake occ + simulated entrypoint hook order).
+
+## Office on a non-LAN address and the CODE welcome dialog (idea#212)
+
+Two optional keys in the instance `.env`. A school Pi needs neither.
+
+| Key | Default | Effect |
+|---|---|---|
+| `IDEA_PUBLIC_HOST` | unset (LAN IP `${ip}`) | Address browsers use for this Nextcloud when it isn't the LAN IP, for example a host reached only over Tailscale (wh: its Tailscale IPv4). It's used for `public_wopi_url` and CODE `server_name`, and it's added to `trusted_domains`. The server-side `wopi_url` stays `http://code:9980`. |
+| `IDEA_COLLABORA_HOME_MODE` | `false` | `true` hides the CODE 24.04 welcome dialog, but limits CODE to 20 connections and 10 open documents. Use it only on a small demo host, never for a classroom. |
+
+Both keys take effect on the next start of the instance, because the office hook rewrites the URLs on every start.
