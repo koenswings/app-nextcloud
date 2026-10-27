@@ -31,6 +31,8 @@ Tests: `node --test tests/` (fake occ + simulated entrypoint hook order).
 
 ## Office on a non-LAN address and the CODE welcome dialog (idea#212)
 
+Live check on a claimed pool Pi: `test/live-container.test.sh` runs a throwaway nextcloud+code project on its own port, checks both cases with the real occ and coolwsd, then quarantines its dir.
+
 Two optional keys in the instance `.env`. A school Pi needs neither.
 
 | Key | Default | Effect |
