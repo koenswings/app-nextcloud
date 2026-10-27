@@ -71,7 +71,10 @@ services:
       # (IDEA_COLLABORA_PROXY). The browser reaches Office on this Nextcloud's own port, on the
       # LAN IP the Engine passes as ${ip} (no Tailscale special case); Nextcloud reaches CODE
       # server-side on the internal compose network.
-      - IDEA_COLLABORA_URL=http://${ip}:${port}
+      # idea#212: IDEA_PUBLIC_HOST (optional, instance .env) is the address browsers use when it is
+      # not the LAN IP, e.g. a host reached only over Tailscale (wh: its Tailscale IPv4). It replaces
+      # ${ip} in the Office URLs and is added to trusted_domains. Unset -> LAN IP (school Pis).
+      - IDEA_COLLABORA_URL=http://${IDEA_PUBLIC_HOST:-${ip}}:${port}
       - IDEA_COLLABORA_INTERNAL_URL=http://code:9980
       - IDEA_COLLABORA_PROXY=http://code:9980
       - PHP_UPLOAD_LIMIT=10G
@@ -80,7 +83,7 @@ services:
       # The Engine writes hostname= and ip= into the instance .env on every start; fall back to them so the
       # trusted-domains hook always knows this Pi (kit 2026-10-17: both were empty, Atlas hand-added 10.42.0.*).
       - IDEA_HOSTNAME=${IDEA_HOSTNAME:-${hostname:-}}
-      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-${ip:-}}
+      - IDEA_HOST_IPS=${IDEA_HOST_IPS:-${ip:-}}${IDEA_PUBLIC_HOST:+,${IDEA_PUBLIC_HOST}}
       # Also trust the /24 of each private IPv4 (e.g. 10.42.0.*), so a school reaching this Pi by
       # another address on its LAN is not refused. Set to 0 to trust exact addresses only.
       - IDEA_TRUST_LAN_SUBNET=${IDEA_TRUST_LAN_SUBNET:-1}
@@ -111,11 +114,14 @@ services:
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
     environment:
-      - extra_params=--o:ssl.enable=false --o:ssl.termination=false
+      # idea#212: home_mode hides the CODE welcome dialog but caps CODE at 20 connections / 10 open
+      # documents, so it is OFF by default (a classroom needs more). Set IDEA_COLLABORA_HOME_MODE=true
+      # in the instance .env for a small demo host (wh).
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=false --o:home_mode.enable=${IDEA_COLLABORA_HOME_MODE:-false}
       # The editor URL CODE advertises in its discovery (urlsrc) must be the address the browser
       # uses: this Nextcloud's own port, which proxies CODE. Nextcloud fetches the discovery from
       # http://code:9980, so without server_name the browser would be sent to code:9980.
-      - server_name=${ip}:${port}
+      - server_name=${IDEA_PUBLIC_HOST:-${ip}}:${port}
     extra_hosts:
       - ${hostname}.local:${ip}
     networks:

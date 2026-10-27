@@ -61,7 +61,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 it('compose: auto-install env set, whole hooks dir mounted, no Office before install', () => {
   const c = readFileSync(join(root, 'compose.yaml'), 'utf8')
   for (const k of ['NEXTCLOUD_ADMIN_USER=', 'NEXTCLOUD_ADMIN_PASSWORD=${IDEA_NC_ADMIN_PASSWORD:-admin911!}', 'MYSQL_HOST=',
-    'IDEA_COLLABORA_URL=http://${ip}:${port}', 'IDEA_COLLABORA_INTERNAL_URL=http://code:9980', './bundled-apps:/idea-bundled-apps:ro'])
+    'IDEA_COLLABORA_URL=http://${IDEA_PUBLIC_HOST:-${ip}}:${port}', 'IDEA_COLLABORA_INTERNAL_URL=http://code:9980', './bundled-apps:/idea-bundled-apps:ro'])
     assert.ok(c.includes(k), k)
   assert.ok(c.includes('./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro'))
   assert.ok(!existsSync(join(HOOKS, 'pre-installation')), 'nothing may need occ before install')
