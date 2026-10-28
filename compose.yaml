@@ -12,12 +12,12 @@ x-app:
   author: Koen Swings
   version: b8ad4382b5f77c1de84cdf05ae822d4041b02b3c
   instanceName: nextcloud
-  # updateApp (idea#351, agent-app-dev#23). healthTimeout in seconds: placeholder 600 (10 min)
-  # until the #351 first-start timings after migration on idea04 are in.
+  # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
+  # Measured on idea04 (Pi 4, 2026-10-28, idea#351): 30.0.6 -> 31.0.1 first start 66-69 s to status.php maintenance:false, needsDbUpgrade:false (6 users, 1203 files, db 163 MB). About 4x margin: real instances add Office and more apps to upgrade.
   healthCheck:
     path: /status.php
     expect: '"maintenance":false,"needsDbUpgrade":false'
-  healthTimeout: 600
+  healthTimeout: 300
   # Nextcloud cannot skip majors: an App release that moves to the next Nextcloud major
   # lists only the App major directly before it. 1.x is the first major, so none yet.
   updatesFrom: []
