@@ -47,6 +47,15 @@ services:
     entrypoint: ["/idea-files-entrypoint.sh"]
     # Image CMD is dropped when entrypoint is overridden — restore it.
     command: ["apache2-foreground"]
+    # Docker health = x-app healthCheck: /status.php reports maintenance:false, needsDbUpgrade:false.
+    # The image has curl. An update took 66-69 s on idea04 (30.0.6 -> 31.0.1); start_period equals
+    # healthTimeout 300 so the first start or an upgrade never counts as unhealthy before the Engine gives up.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -m 4 http://127.0.0.1/status.php | grep -q '\"maintenance\":false,\"needsDbUpgrade\":false'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
     volumes:
       - ./data/nextcloud:/var/www/html
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
