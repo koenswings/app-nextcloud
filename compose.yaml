@@ -39,7 +39,7 @@ networks:
 services:
   nextcloud-app:
     #image: nextcloud
-    image: koenswings/nextcloud:1.0-31.0.1
+    image: koenswings/nextcloud:1.0-31.0.1@sha256:3fcd398e8e9b0d46cc84ecebe70a95b4ad97ffd85f974419376d7ddd68a1823d
     labels:
       x-app-version: "1.2-31.0.1"
     restart: no
@@ -117,7 +117,7 @@ services:
       - backend
   nextcloud-db:
     #image: mariadb
-    image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404
+    image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
       x-app-version: "1.2-31.0.1"
     restart: no
@@ -135,7 +135,7 @@ services:
       - backend
   code:
     #image: collabora/code
-    image: koenswings/nextcloud-code:1.0-24.04.13.2
+    image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
       x-app-version: "1.2-31.0.1"
     restart: no
