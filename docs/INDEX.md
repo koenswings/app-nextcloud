@@ -13,3 +13,4 @@ Update this file whenever an authoritative doc is added or significantly revised
 | [trusted-domains.md](./trusted-domains.md) | `trusted_domains` set for the current Pi on every start (before-starting hook, agent-engine-dev#163) |
 | [usb-sticks.md](./usb-sticks.md) | Read-only USB sticks (`x-app.usbMount`, `usb-sync.sh`, idea#193) |
 | [first-start.md](./first-start.md) | Self-install and hook order |
+| [usage-hook.md](./usage-hook.md) | idea#413 usage hook (`x-app.usage`, day summaries and Office samples) |
