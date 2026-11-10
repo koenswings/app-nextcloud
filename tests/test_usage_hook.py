@@ -54,12 +54,13 @@ def build_db(path):
     );
     CREATE TABLE oc_storages (numeric_id INTEGER PRIMARY KEY, id TEXT);
     """)
-    conn.executemany("INSERT INTO oc_users VALUES (?)", [("admin",), ("teacher1",), ("learner1",), ("learner2",)])
+    conn.executemany("INSERT INTO oc_users VALUES (?)", [("admin",), ("teacher1",), ("learner1",), ("learner2",), ("thabo",)])
     conn.executemany("INSERT INTO oc_group_user VALUES (?,?)", [
         ("admin", "admin"),
         ("teacher1", "teachers"),
         ("learner1", "learners"),
         ("learner2", "learners"),
+        ("thabo", "learners"),
         ("learner1", "Grade 5"),
     ])
     # lastLogin: seconds for 2026-11-12 10:00:00 UTC = 1762941600? use known
@@ -162,12 +163,15 @@ class UsageHookTests(unittest.TestCase):
         self.assertEqual(obj["day"], DAY)
         self.assertEqual(obj["app"], "nextcloud")
         self.assertTrue(FORBIDDEN.isdisjoint(obj))
-        self.assertEqual(obj["setup"]["admin"], 1)
-        self.assertEqual(obj["setup"]["teachers"], 1)
-        self.assertEqual(obj["setup"]["learners"], 2)
+        self.assertEqual(obj["setup"]["admin"], {"total": 1, "beyondSeed": 0})
+        self.assertEqual(obj["setup"]["teacher"], {"total": 1, "beyondSeed": 0})
+        self.assertEqual(obj["setup"]["learner"], {"total": 3, "beyondSeed": 1})
         self.assertEqual(obj["setup"]["otherGroups"]["Grade 5"], 1)
-        self.assertEqual(obj["logins"]["teacher"]["users"], 1)
-        self.assertEqual(obj["logins"]["learner"]["users"], 0)
+        self.assertNotIn("teachers", obj["setup"])
+        self.assertNotIn("learners", obj["setup"])
+        self.assertEqual(obj["logins"]["teacher"], {"total": 1, "beyondSeed": 0})
+        self.assertEqual(obj["logins"]["learner"], {"total": 0, "beyondSeed": 0})
+        self.assertEqual(obj["logins"]["admin"], {"total": 0, "beyondSeed": 0})
         self.assertNotIn("teachers", obj["logins"])
         self.assertNotIn("learners", obj["logins"])
         self.assertEqual(obj["office"]["byGroup"]["teacher"], 1)
@@ -186,6 +190,8 @@ class UsageHookTests(unittest.TestCase):
         blob = json.dumps(obj)
         self.assertNotIn("teacher1", blob)
         self.assertNotIn("learner1", blob)
+        self.assertNotIn("learner2", blob)
+        self.assertNotIn("thabo", blob)
         self.assertNotIn("127.0.0.1", blob)
         self.assertNotIn("worksheet.odt", blob)
         self.assertNotIn("sheet.ods", blob)

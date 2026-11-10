@@ -28,6 +28,9 @@ FORBIDDEN = (
 )
 PREFIX = os.environ.get("IDEA_USAGE_PREFIX") or "oc_"
 TEACHERS = os.environ.get("IDEA_TEACHERS_GROUP") or "teachers"
+# Seeds from docker-entrypoint-hooks.d/before-starting/20-idea-accounts.sh
+# (IDEA_NC_SEED_USERS default teacher1:teachers learner1:learners) plus
+# demo/install-demo.sh DEMO_USERS. Matched by username inside the hook only.
 
 
 def emit(obj):
@@ -129,26 +132,63 @@ def user_groups(store):
     return users, mapping
 
 
+def seed_names():
+    """Return {admin, teacher, learner} sets of seed usernames. Never emitted."""
+    admin = os.environ.get("NEXTCLOUD_ADMIN_USER") or "admin"
+    names = {"admin": {admin}, "teacher": set(), "learner": set()}
+    raw = os.environ.get("IDEA_NC_SEED_USERS")
+    if raw is None:
+        raw = "teacher1:teachers learner1:learners"
+    parts = list(raw.split())
+    # demo/install-demo.sh DEMO_USERS extras (same repo fixtures)
+    parts.extend(["teacher2:teachers", "learner2:learners", "learner3:learners"])
+    for part in parts:
+        if ":" not in part:
+            continue
+        user, group = part.split(":", 1)
+        user, group = user.strip(), group.strip()
+        if not user:
+            continue
+        if group == "admin":
+            names["admin"].add(user)
+        elif group == TEACHERS:
+            names["teacher"].add(user)
+        elif group == "learners":
+            names["learner"].add(user)
+    return names
+
+
+def role_count(uids, seeds):
+    total = len(uids)
+    seeded = sum(1 for uid in uids if uid in seeds)
+    return {"total": total, "beyondSeed": total - seeded}
+
+
+def empty_role():
+    return {"total": 0, "beyondSeed": 0}
+
+
 def setup_from_groups(users, mapping):
-    setup = {"admin": 0, "teachers": 0, "learners": 0, "otherGroups": {}}
-    counted = {"admin": set(), "teachers": set(), "learners": set()}
+    counted = {"admin": set(), "teacher": set(), "learner": set()}
     other = {}
     for uid in users:
         gs = mapping.get(uid, [])
         if "admin" in gs:
             counted["admin"].add(uid)
         if TEACHERS in gs:
-            counted["teachers"].add(uid)
+            counted["teacher"].add(uid)
         if "learners" in gs:
-            counted["learners"].add(uid)
+            counted["learner"].add(uid)
         for g in gs:
             if g not in ("admin", TEACHERS, "learners"):
                 other.setdefault(g, set()).add(uid)
-    setup["admin"] = len(counted["admin"])
-    setup["teachers"] = len(counted["teachers"])
-    setup["learners"] = len(counted["learners"])
-    setup["otherGroups"] = {g: len(s) for g, s in sorted(other.items())}
-    return setup
+    seeds = seed_names()
+    return {
+        "admin": role_count(counted["admin"], seeds["admin"]),
+        "teacher": role_count(counted["teacher"], seeds["teacher"]),
+        "learner": role_count(counted["learner"], seeds["learner"]),
+        "otherGroups": {g: len(s) for g, s in sorted(other.items())},
+    }
 
 
 def last_logins(store):
@@ -298,15 +338,14 @@ def workflows(store, day):
 def day_payload(store, day):
     users, mapping = user_groups(store)
     setup = setup_from_groups(users, mapping)
-    logins = {"admin": {"users": 0}, "teacher": {"users": 0}, "learner": {"users": 0}}
+    seeds = seed_names()
     login_seen = {"admin": set(), "teacher": set(), "learner": set()}
     for uid, val in last_logins(store).items():
         if ts_to_day(val) != day:
             continue
         grp = primary_group(mapping.get(uid, []))
         login_seen[grp].add(uid)
-    for grp in logins:
-        logins[grp]["users"] = len(login_seen[grp])
+    logins = {grp: role_count(login_seen[grp], seeds[grp]) for grp in ("admin", "teacher", "learner")}
     office = office_from_wopi(store, mapping, day)
     day_office = {
         "opens": office["opens"],
@@ -357,8 +396,8 @@ def main():
             if mode == "sample"
             else {
                 "schema": "idea-usage-day/1", "day": day or "", "app": APP, "demo": False,
-                "setup": {"admin": 0, "teachers": 0, "learners": 0, "otherGroups": {}},
-                "logins": {"admin": {"users": 0}, "teacher": {"users": 0}, "learner": {"users": 0}},
+                "setup": {"admin": empty_role(), "teacher": empty_role(), "learner": empty_role(), "otherGroups": {}},
+                "logins": {"admin": empty_role(), "teacher": empty_role(), "learner": empty_role()},
                 "office": {
                     "opens": 0, "distinctDocuments": 0, "read": 0, "edit": 0,
                     "estimatedMinutes": 0,
@@ -384,8 +423,8 @@ def main():
             return 2
         emit(day_payload(type("S", (), {"has": lambda self, n: False, "q": lambda self, s: []})(), day) if False else {
             "schema": "idea-usage-day/1", "day": day, "app": APP, "demo": False,
-            "setup": {"admin": 0, "teachers": 0, "learners": 0, "otherGroups": {}},
-            "logins": {"admin": {"users": 0}, "teacher": {"users": 0}, "learner": {"users": 0}},
+            "setup": {"admin": empty_role(), "teacher": empty_role(), "learner": empty_role(), "otherGroups": {}},
+            "logins": {"admin": empty_role(), "teacher": empty_role(), "learner": empty_role()},
             "office": {"opens": 0, "distinctDocuments": 0, "read": 0, "edit": 0, "estimatedMinutes": 0,
                        "byGroup": {"admin": 0, "teacher": 0, "learner": 0},
                        "mime": {"text": 0, "sheet": 0, "slides": 0}},
@@ -505,6 +544,31 @@ if ($pdo) {
     }
     foreach (q($pdo, "SELECT uid FROM {$prefix}users") as $r) $users[(string)$r['uid']] = true;
 }
+function seed_names_php($teachers) {
+    $admin = getenv('NEXTCLOUD_ADMIN_USER') ?: 'admin';
+    $names = array('admin' => array($admin => true), 'teacher' => array(), 'learner' => array());
+    $raw = getenv('IDEA_NC_SEED_USERS');
+    if ($raw === false) $raw = 'teacher1:teachers learner1:learners';
+    $parts = preg_split('/\s+/', trim($raw . ' teacher2:teachers learner2:learners learner3:learners'));
+    foreach ($parts as $part) {
+        if (strpos($part, ':') === false) continue;
+        list($user, $group) = explode(':', $part, 2);
+        $user = trim($user); $group = trim($group);
+        if ($user === '') continue;
+        if ($group === 'admin') $names['admin'][$user] = true;
+        elseif ($group === $teachers) $names['teacher'][$user] = true;
+        elseif ($group === 'learners') $names['learner'][$user] = true;
+    }
+    return $names;
+}
+function role_count_php($uids, $seeds) {
+    $total = count($uids);
+    $seeded = 0;
+    foreach ($uids as $uid => $_) {
+        if (isset($seeds[$uid])) $seeded++;
+    }
+    return array('total' => $total, 'beyondSeed' => $total - $seeded);
+}
 function setup_from($users, $mapping, $teachers) {
     $a = $t = $l = array(); $other = array();
     foreach (array_keys($users) as $uid) {
@@ -522,7 +586,13 @@ function setup_from($users, $mapping, $teachers) {
     $og = array();
     ksort($other);
     foreach ($other as $g => $set) $og[$g] = count($set);
-    return array('admin' => count($a), 'teachers' => count($t), 'learners' => count($l), 'otherGroups' => $og);
+    $seeds = seed_names_php($teachers);
+    return array(
+        'admin' => role_count_php($a, $seeds['admin']),
+        'teacher' => role_count_php($t, $seeds['teacher']),
+        'learner' => role_count_php($l, $seeds['learner']),
+        'otherGroups' => $og,
+    );
 }
 function instance_salt_php() {
     $env = getenv('IDEA_USAGE_INSTANCE_SALT');
@@ -586,8 +656,10 @@ if ($mode !== 'day' || !preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $day)) {
     fwrite(STDERR, "invalid arguments\n");
     exit(2);
 }
-$setup = $pdo ? setup_from($users, $mapping, $teachers) : array('admin'=>0,'teachers'=>0,'learners'=>0,'otherGroups'=>array());
-$logins = array('admin'=>array('users'=>0),'teacher'=>array('users'=>0),'learner'=>array('users'=>0));
+$emptyRole = array('total'=>0,'beyondSeed'=>0);
+$setup = $pdo ? setup_from($users, $mapping, $teachers) : array('admin'=>$emptyRole,'teacher'=>$emptyRole,'learner'=>$emptyRole,'otherGroups'=>array());
+$seeds = seed_names_php($teachers);
+$logins = array('admin'=>$emptyRole,'teacher'=>$emptyRole,'learner'=>$emptyRole);
 if ($pdo) {
     $seen = array('admin'=>array(),'teacher'=>array(),'learner'=>array());
     foreach (q($pdo, "SELECT userid, configvalue FROM {$prefix}preferences WHERE appid='login' AND configkey='lastLogin'") as $row) {
@@ -596,7 +668,7 @@ if ($pdo) {
         $g = primary_group(isset($mapping[$uid]) ? $mapping[$uid] : array(), $teachers);
         $seen[$g][$uid] = true;
     }
-    foreach ($logins as $g => $_) $logins[$g]['users'] = count($seen[$g]);
+    foreach (array('admin','teacher','learner') as $g) $logins[$g] = role_count_php($seen[$g], $seeds[$g]);
 }
 $office = $pdo ? office_from($pdo, $prefix, $mapping, $teachers, $day) : array(
     'opens'=>0,'distinctDocuments'=>0,'read'=>0,'edit'=>0,'estimatedMinutes'=>0,

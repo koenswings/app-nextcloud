@@ -30,7 +30,7 @@ Stdout is exactly one JSON object.
 
 The hook never prints `engine`, `instance`, `name`, `listed`, `clock`, `collectedAt`, `hookStatus` or `skipReason`.
 
-Role keys are singular everywhere they name a role: `office.byGroup` and `logins` use `admin`, `teacher`, `learner`. Census counts on `setup` stay `admin` / `teachers` / `learners` (how many accounts), plus `otherGroups`.
+Role keys are singular everywhere they name a role: `setup`, `logins` and `office.byGroup` use `admin`, `teacher`, `learner`. `setup` and `logins` each emit `{total, beyondSeed}` per role (plus `otherGroups` on `setup`). `office.byGroup` stays a count of tokens, not a RoleCount. Seeds are matched by username inside the hook only (first-start `IDEA_NC_SEED_USERS` / `NEXTCLOUD_ADMIN_USER`, plus the demo fixture names `teacher2`, `learner2`, `learner3`) and never written to stdout.
 
 Workflows: `worksheetShares`, `editShares`, `fileDropLinks`, `fileDropUploads`, `schoolFilesShares`. Worksheet shares skip the School Files storage (`local::/mnt/idea-files`).
 
