@@ -588,6 +588,7 @@ function setup_from($users, $mapping, $teachers) {
     $og = array();
     ksort($other);
     foreach ($other as $g => $set) $og[$g] = role_count_php($set, $allSeeds);
+    if (!$og) $og = new stdClass();
     return array(
         'admin' => role_count_php($a, $seeds['admin']),
         'teacher' => role_count_php($t, $seeds['teacher']),
@@ -658,7 +659,7 @@ if ($mode !== 'day' || !preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $day)) {
     exit(2);
 }
 $emptyRole = array('total'=>0,'beyondSeed'=>0);
-$setup = $pdo ? setup_from($users, $mapping, $teachers) : array('admin'=>$emptyRole,'teacher'=>$emptyRole,'learner'=>$emptyRole,'otherGroups'=>array());
+$setup = $pdo ? setup_from($users, $mapping, $teachers) : array('admin'=>$emptyRole,'teacher'=>$emptyRole,'learner'=>$emptyRole,'otherGroups'=>new stdClass());
 $seeds = seed_names_php($teachers);
 $logins = array('admin'=>$emptyRole,'teacher'=>$emptyRole,'learner'=>$emptyRole);
 if ($pdo) {
