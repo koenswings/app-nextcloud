@@ -7,7 +7,7 @@ docker compose exec -T nextcloud-app /hooks/usage.sh day YYYY-MM-DD
 docker compose exec -T nextcloud-app /hooks/usage.sh sample
 ```
 
-Unlisted containers borrow the same file via `sh -s`. The script uses Python on the test box and PHP inside the official Nextcloud image (which has no Python). Both paths are read-only (`PRAGMA query_only` / `SET SESSION TRANSACTION READ ONLY`).
+Unlisted containers borrow the same file via `sh -s`. The script uses PHP inside the official Nextcloud image (detected by `/var/www/html/occ`, since the image also ships python3) and Python on the test box. Both paths are read-only (`PRAGMA query_only` / `SET SESSION TRANSACTION READ ONLY`).
 
 ## Declaration
 

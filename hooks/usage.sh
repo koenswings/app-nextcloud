@@ -8,7 +8,7 @@ if command -v python3 >/dev/null 2>&1; then PY=python3
 elif command -v python >/dev/null 2>&1; then PY=python
 else PY=
 fi
-if [ -n "$PY" ]; then
+if [ -n "$PY" ] && [ ! -f /var/www/html/occ ]; then
 exec "$PY" - "$@" <<'PY'
 from __future__ import print_function
 
@@ -187,7 +187,7 @@ def setup_from_groups(users, mapping):
         "admin": role_count(counted["admin"], seeds["admin"]),
         "teacher": role_count(counted["teacher"], seeds["teacher"]),
         "learner": role_count(counted["learner"], seeds["learner"]),
-        "otherGroups": {g: len(s) for g, s in sorted(other.items())},
+        "otherGroups": {g: role_count(s, seeds["admin"] | seeds["teacher"] | seeds["learner"]) for g, s in sorted(other.items())},
     }
 
 
@@ -583,10 +583,11 @@ function setup_from($users, $mapping, $teachers) {
             }
         }
     }
+    $seeds = seed_names_php($teachers);
+    $allSeeds = $seeds['admin'] + $seeds['teacher'] + $seeds['learner'];
     $og = array();
     ksort($other);
-    foreach ($other as $g => $set) $og[$g] = count($set);
-    $seeds = seed_names_php($teachers);
+    foreach ($other as $g => $set) $og[$g] = role_count_php($set, $allSeeds);
     return array(
         'admin' => role_count_php($a, $seeds['admin']),
         'teacher' => role_count_php($t, $seeds['teacher']),

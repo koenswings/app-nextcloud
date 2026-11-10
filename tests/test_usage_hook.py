@@ -166,7 +166,7 @@ class UsageHookTests(unittest.TestCase):
         self.assertEqual(obj["setup"]["admin"], {"total": 1, "beyondSeed": 0})
         self.assertEqual(obj["setup"]["teacher"], {"total": 1, "beyondSeed": 0})
         self.assertEqual(obj["setup"]["learner"], {"total": 3, "beyondSeed": 1})
-        self.assertEqual(obj["setup"]["otherGroups"]["Grade 5"], 1)
+        self.assertEqual(obj["setup"]["otherGroups"]["Grade 5"], {"total": 1, "beyondSeed": 0})
         self.assertNotIn("teachers", obj["setup"])
         self.assertNotIn("learners", obj["setup"])
         self.assertEqual(obj["logins"]["teacher"], {"total": 1, "beyondSeed": 0})
