@@ -1,4 +1,4 @@
-# Usage hook (idea#413)
+# Usage hook (idea#413, idea#431)
 
 Nextcloud ships `hooks/usage.sh`, mounted at `/hooks/usage.sh` on `nextcloud-app`. The Engine (`agent-engine-dev#308`) invokes it as `pi` with:
 
@@ -30,9 +30,13 @@ Stdout is exactly one JSON object.
 
 The hook never prints `engine`, `instance`, `name`, `listed`, `clock`, `collectedAt`, `hookStatus` or `skipReason`.
 
-Role keys are singular everywhere they name a role: `setup`, `logins` and `office.byGroup` use `admin`, `teacher`, `learner`. `setup` and `logins` each emit `{total, beyondSeed}` per role (plus `otherGroups` on `setup`). `office.byGroup` stays a count of tokens, not a RoleCount. Seeds are matched by username inside the hook only (first-start `IDEA_NC_SEED_USERS` / `NEXTCLOUD_ADMIN_USER`, plus the demo fixture names `teacher2`, `learner2`, `learner3`) and never written to stdout.
+Role keys are singular everywhere they name a role: `setup`, `logins`, `office.byGroup` and `workflows.byGroup` use `admin`, `teacher`, `learner`. `setup` and `logins` each emit `{total, beyondSeed}` per role (plus `otherGroups` on `setup`). `office.byGroup` stays a count of tokens, not a RoleCount. Seeds are matched by username inside the hook only (first-start `IDEA_NC_SEED_USERS` / `NEXTCLOUD_ADMIN_USER`, plus the demo fixture names `teacher2`, `learner2`, `learner3`) and never written to stdout.
 
-Workflows: `worksheetShares`, `editShares`, `fileDropLinks`, `fileDropUploads`, `schoolFilesShares`. Worksheet shares skip the School Files storage (`local::/mnt/idea-files`).
+Workflows keep the flat totals `worksheetShares`, `editShares`, `fileDropLinks`, `fileDropUploads`, `schoolFilesShares`. Worksheet shares skip the School Files storage (`local::/mnt/idea-files`). idea#431 adds an additive `workflows.byGroup` object with the same role keys for `worksheetShares`, `editShares`, `fileDropUploads` and `schoolFilesShares` (not `fileDropLinks`). Each map is plain counts, like `office.byGroup`, not `{total, beyondSeed}`.
+
+Shares are attributed with `oc_share.uid_initiator` if set, otherwise `uid_owner`, then the same Nextcloud-group mapping as Office opens (`admin` wins, then `teachers` → `teacher`, otherwise `learner`).
+
+File-drop uploads are anonymous public-link posts: `oc_filecache` has no uploader uid. The hook attributes each upload to the **link owner** (the same initiator-or-owner of the `share_type = 3` create-only share whose folder is the file's parent). That is the only identified actor, and it answers U-7 line 5 (“an action by a teacher or learner”): uploads into a teacher- or learner-owned drop folder count; uploads into an admin-owned drop folder do not. Ambiguity: the wording could also mean the person who posted the file. We cannot see that person, and treating a missing uid as `learner` would hide admin-owned drops as learner activity, so we do not do that.
 
 ## Sample document ids
 
