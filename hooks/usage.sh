@@ -1,5 +1,5 @@
 #!/bin/sh
-# hooks/usage.sh — Nextcloud usage hook (idea#413)
+# hooks/usage.sh — Nextcloud usage hook (idea#413, idea#431)
 # Contract: koenswings/agent-engine-dev#308 docs/USAGE-CONTRACT.md
 # Listed:  docker compose exec -T nextcloud-app /hooks/usage.sh day YYYY-MM-DD|sample
 # Unlisted: docker exec -i <container> sh -s -- day YYYY-MM-DD|sample  < hooks/usage.sh
@@ -168,6 +168,34 @@ def empty_role():
     return {"total": 0, "beyondSeed": 0}
 
 
+def empty_by_group():
+    return {"admin": 0, "teacher": 0, "learner": 0}
+
+
+def empty_workflows():
+    # Flat totals stay as before (idea#413). byGroup is additive (idea#431).
+    return {
+        "worksheetShares": 0, "editShares": 0,
+        "fileDropLinks": 0, "fileDropUploads": 0, "schoolFilesShares": 0,
+        "byGroup": {
+            "worksheetShares": empty_by_group(),
+            "editShares": empty_by_group(),
+            "fileDropUploads": empty_by_group(),
+            "schoolFilesShares": empty_by_group(),
+        },
+    }
+
+
+def share_actor_group(share, mapping):
+    """Map a share to admin/teacher/learner. Prefer uid_initiator (who
+    created the share) and fall back to uid_owner. Same primary_group
+    rules as office.byGroup: ungrouped or missing actor -> learner.
+    Usernames never leave this function.
+    """
+    actor = share.get("uid_initiator") or share.get("uid_owner") or ""
+    return primary_group(mapping.get(str(actor), []) if actor else [])
+
+
 def setup_from_groups(users, mapping):
     counted = {"admin": set(), "teacher": set(), "learner": set()}
     other = {}
@@ -282,11 +310,8 @@ def office_from_wopi(store, mapping, day=None):
     return result
 
 
-def workflows(store, day):
-    out = {
-        "worksheetShares": 0, "editShares": 0,
-        "fileDropLinks": 0, "fileDropUploads": 0, "schoolFilesShares": 0,
-    }
+def workflows(store, mapping, day):
+    out = empty_workflows()
     if not store.has("share"):
         return out
     shares = store.q("SELECT * FROM %s" % t("share"))
@@ -302,7 +327,12 @@ def workflows(store, day):
     if store.has("storages"):
         for s in store.q("SELECT numeric_id, id FROM %s" % t("storages")):
             storage_ids[str(s["numeric_id"])] = str(s.get("id") or "")
-    drop_parents = set()
+    # File-drop uploads are anonymous public-link posts. Attribute each
+    # upload to the link owner (uid_initiator, else uid_owner), because
+    # filecache has no uploader uid. That answers U-7 "an action by a
+    # teacher or learner": a used drop folder owned by a teacher or
+    # learner counts; an admin-owned drop does not. See docs/usage-hook.md.
+    drop_group = {}
     for s in shares:
         stime_day = ts_to_day(s.get("stime"))
         try:
@@ -315,23 +345,28 @@ def workflows(store, day):
             stype = -1
         share_with = str(s.get("share_with") or "")
         item = str(s.get("item_source") or "")
+        grp = share_actor_group(s, mapping)
         is_drop = stype == 3 and (perm & 4) and not (perm & 2)
-        if is_drop:
-            drop_parents.add(item)
+        if is_drop and item not in drop_group:
+            drop_group[item] = grp
         sid = storage_ids.get(str(file_storage.get(item, "")), "")
         is_school = sid.startswith("local::/mnt/idea-files")
         if stime_day == day:
             if stype == 1 and (perm & 1) and not (perm & 2) and share_with not in ("admin", TEACHERS) and not is_school:
                 out["worksheetShares"] += 1
+                out["byGroup"]["worksheetShares"][grp] += 1
             if perm & 2:
                 out["editShares"] += 1
+                out["byGroup"]["editShares"][grp] += 1
             if is_drop:
                 out["fileDropLinks"] += 1
             if is_school:
                 out["schoolFilesShares"] += 1
+                out["byGroup"]["schoolFilesShares"][grp] += 1
     for fid, parent in parent_of.items():
-        if parent in drop_parents and ts_to_day(mtime_of.get(fid)) == day:
+        if parent in drop_group and ts_to_day(mtime_of.get(fid)) == day:
             out["fileDropUploads"] += 1
+            out["byGroup"]["fileDropUploads"][drop_group.get(parent, "learner")] += 1
     return out
 
 
@@ -364,7 +399,7 @@ def day_payload(store, day):
         "setup": setup,
         "logins": logins,
         "office": day_office,
-        "workflows": workflows(store, day),
+        "workflows": workflows(store, mapping, day),
     }
 
 
@@ -404,10 +439,7 @@ def main():
                     "byGroup": {"admin": 0, "teacher": 0, "learner": 0},
                     "mime": {"text": 0, "sheet": 0, "slides": 0},
                 },
-                "workflows": {
-                    "worksheetShares": 0, "editShares": 0,
-                    "fileDropLinks": 0, "fileDropUploads": 0, "schoolFilesShares": 0,
-                },
+                "workflows": empty_workflows(),
             }
             if mode == "day" and re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", day or "")
             else None
@@ -428,8 +460,7 @@ def main():
             "office": {"opens": 0, "distinctDocuments": 0, "read": 0, "edit": 0, "estimatedMinutes": 0,
                        "byGroup": {"admin": 0, "teacher": 0, "learner": 0},
                        "mime": {"text": 0, "sheet": 0, "slides": 0}},
-            "workflows": {"worksheetShares": 0, "editShares": 0, "fileDropLinks": 0,
-                          "fileDropUploads": 0, "schoolFilesShares": 0},
+            "workflows": empty_workflows(),
         })
         return 0
     try:
@@ -675,7 +706,15 @@ if ($pdo) {
 $office = $pdo ? office_from($pdo, $prefix, $mapping, $teachers, $day) : array(
     'opens'=>0,'distinctDocuments'=>0,'read'=>0,'edit'=>0,'estimatedMinutes'=>0,
     'byGroup'=>array('admin'=>0,'teacher'=>0,'learner'=>0),'mime'=>array('text'=>0,'sheet'=>0,'slides'=>0));
-$wf = array('worksheetShares'=>0,'editShares'=>0,'fileDropLinks'=>0,'fileDropUploads'=>0,'schoolFilesShares'=>0);
+$wf = array(
+    'worksheetShares'=>0,'editShares'=>0,'fileDropLinks'=>0,'fileDropUploads'=>0,'schoolFilesShares'=>0,
+    'byGroup'=>array(
+        'worksheetShares'=>array('admin'=>0,'teacher'=>0,'learner'=>0),
+        'editShares'=>array('admin'=>0,'teacher'=>0,'learner'=>0),
+        'fileDropUploads'=>array('admin'=>0,'teacher'=>0,'learner'=>0),
+        'schoolFilesShares'=>array('admin'=>0,'teacher'=>0,'learner'=>0),
+    ),
+);
 if ($pdo) {
     $shares = q($pdo, "SELECT * FROM {$prefix}share");
     $fileStorage = $parentOf = $mtimeOf = $storageIds = array();
@@ -692,19 +731,36 @@ if ($pdo) {
         $stype = intval(isset($s['share_type']) ? $s['share_type'] : -1);
         $with = isset($s['share_with']) ? (string)$s['share_with'] : '';
         $item = isset($s['item_source']) ? (string)$s['item_source'] : '';
+        $actor = '';
+        if (!empty($s['uid_initiator'])) $actor = (string)$s['uid_initiator'];
+        elseif (!empty($s['uid_owner'])) $actor = (string)$s['uid_owner'];
+        $grp = primary_group(isset($mapping[$actor]) ? $mapping[$actor] : array(), $teachers);
         $isDrop = ($stype === 3 && ($perm & 4) && !($perm & 2));
-        if ($isDrop) $drops[$item] = true;
+        if ($isDrop && !isset($drops[$item])) $drops[$item] = $grp;
         $sid = isset($storageIds[(string)(isset($fileStorage[$item]) ? $fileStorage[$item] : '')]) ? $storageIds[(string)$fileStorage[$item]] : '';
         $isSchool = (strpos($sid, 'local::/mnt/idea-files') === 0);
         if ($stimeDay === $day) {
-            if ($stype === 1 && ($perm & 1) && !($perm & 2) && $with !== 'admin' && $with !== $teachers && !$isSchool) $wf['worksheetShares']++;
-            if ($perm & 2) $wf['editShares']++;
+            if ($stype === 1 && ($perm & 1) && !($perm & 2) && $with !== 'admin' && $with !== $teachers && !$isSchool) {
+                $wf['worksheetShares']++;
+                $wf['byGroup']['worksheetShares'][$grp]++;
+            }
+            if ($perm & 2) {
+                $wf['editShares']++;
+                $wf['byGroup']['editShares'][$grp]++;
+            }
             if ($isDrop) $wf['fileDropLinks']++;
-            if ($isSchool) $wf['schoolFilesShares']++;
+            if ($isSchool) {
+                $wf['schoolFilesShares']++;
+                $wf['byGroup']['schoolFilesShares'][$grp]++;
+            }
         }
     }
     foreach ($parentOf as $fid => $parent) {
-        if (isset($drops[$parent]) && ts_day(isset($mtimeOf[$fid]) ? $mtimeOf[$fid] : null) === $day) $wf['fileDropUploads']++;
+        if (isset($drops[$parent]) && ts_day(isset($mtimeOf[$fid]) ? $mtimeOf[$fid] : null) === $day) {
+            $wf['fileDropUploads']++;
+            $g = $drops[$parent];
+            $wf['byGroup']['fileDropUploads'][$g]++;
+        }
     }
 }
 emit(array(

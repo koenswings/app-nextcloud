@@ -1,4 +1,4 @@
-"""Unit tests for hooks/usage.sh (idea#413). Run: python3 -m unittest tests.test_usage_hook"""
+"""Unit tests for hooks/usage.sh (idea#413, idea#431). Run: python3 -m unittest tests.test_usage_hook"""
 import json
 import os
 import sqlite3
@@ -50,7 +50,8 @@ def build_db(path):
     CREATE TABLE oc_mimetypes (id INTEGER PRIMARY KEY, mimetype TEXT);
     CREATE TABLE oc_share (
         id INTEGER, share_type INTEGER, share_with TEXT, uid_owner TEXT,
-        permissions INTEGER, stime INTEGER, item_source INTEGER, file_target TEXT
+        permissions INTEGER, stime INTEGER, item_source INTEGER, file_target TEXT,
+        uid_initiator TEXT
     );
     CREATE TABLE oc_storages (numeric_id INTEGER PRIMARY KEY, id TEXT);
     """)
@@ -95,13 +96,13 @@ def build_db(path):
         (login_ts + 3600,),
     )
     # worksheet share (group read-only to learners)
-    conn.execute("INSERT INTO oc_share VALUES (1,1,'learners','teacher1',1,?,10,'/worksheet.odt')", (login_ts,))
+    conn.execute("INSERT INTO oc_share VALUES (1,1,'learners','teacher1',1,?,10,'/worksheet.odt',NULL)", (login_ts,))
     # edit share
-    conn.execute("INSERT INTO oc_share VALUES (2,1,'teachers','admin',31,?,10,'/worksheet.odt')", (login_ts,))
+    conn.execute("INSERT INTO oc_share VALUES (2,1,'teachers','admin',31,?,10,'/worksheet.odt',NULL)", (login_ts,))
     # file-drop link (create only)
-    conn.execute("INSERT INTO oc_share VALUES (3,3,'','teacher1',4,?,20,'/drop')", (login_ts,))
+    conn.execute("INSERT INTO oc_share VALUES (3,3,'','teacher1',4,?,20,'/drop',NULL)", (login_ts,))
     # school files share
-    conn.execute("INSERT INTO oc_share VALUES (4,1,'learners','teacher1',1,?,30,'/notes.odt')", (login_ts,))
+    conn.execute("INSERT INTO oc_share VALUES (4,1,'learners','teacher1',1,?,30,'/notes.odt',NULL)", (login_ts,))
     conn.commit()
     conn.close()
 
@@ -184,6 +185,17 @@ class UsageHookTests(unittest.TestCase):
         self.assertEqual(obj["workflows"]["fileDropLinks"], 1)
         self.assertEqual(obj["workflows"]["fileDropUploads"], 1)
         self.assertEqual(obj["workflows"]["schoolFilesShares"], 1)
+        self.assertEqual(obj["workflows"]["byGroup"]["worksheetShares"],
+                         {"admin": 0, "teacher": 1, "learner": 0})
+        self.assertEqual(obj["workflows"]["byGroup"]["editShares"],
+                         {"admin": 1, "teacher": 0, "learner": 0})
+        self.assertEqual(obj["workflows"]["byGroup"]["fileDropUploads"],
+                         {"admin": 0, "teacher": 1, "learner": 0})
+        self.assertEqual(obj["workflows"]["byGroup"]["schoolFilesShares"],
+                         {"admin": 0, "teacher": 1, "learner": 0})
+        self.assertNotIn("fileDropLinks", obj["workflows"]["byGroup"])
+        self.assertNotIn("teachers", obj["workflows"]["byGroup"]["worksheetShares"])
+        self.assertNotIn("learners", obj["workflows"]["byGroup"]["worksheetShares"])
 
     def test_no_usernames_or_addresses(self):
         obj = parse(run_hook(self.db, ["day", DAY]))
@@ -200,6 +212,53 @@ class UsageHookTests(unittest.TestCase):
         proc = run_hook(self.db, ["day", "nope"])
         self.assertEqual(proc.returncode, 2)
         self.assertEqual(proc.stdout, b"")
+
+    def test_share_by_group_prefers_initiator_and_filedrop_link_owner(self):
+        """uid_initiator wins over uid_owner; file-drop uploads follow the link owner."""
+        import datetime
+        login_ts = int(datetime.datetime(2026, 11, 12, 10, 0, 0).timestamp())
+        conn = sqlite3.connect(self.db)
+        # Worksheet share: file owned by admin, created by teacher1.
+        conn.execute(
+            "INSERT INTO oc_share VALUES (5,1,'learners','admin',1,?,10,'/from-admin.odt','teacher1')",
+            (login_ts,),
+        )
+        # Admin-owned file-drop folder plus one upload today.
+        conn.execute("INSERT INTO oc_filecache VALUES (40, 1, 0, 'files/admin-drop', 1762940000, 1)")
+        conn.execute(
+            "INSERT INTO oc_filecache VALUES (41, 1, 40, 'files/admin-drop/hw.txt', ?, 1)",
+            (login_ts,),
+        )
+        conn.execute(
+            "INSERT INTO oc_share VALUES (6,3,'','admin',4,?,40,'/admin-drop','admin')",
+            (login_ts,),
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        wf = obj["workflows"]
+        self.assertEqual(wf["worksheetShares"], 2)
+        self.assertEqual(wf["byGroup"]["worksheetShares"],
+                         {"admin": 0, "teacher": 2, "learner": 0})
+        self.assertEqual(wf["fileDropLinks"], 2)
+        self.assertEqual(wf["fileDropUploads"], 2)
+        self.assertEqual(wf["byGroup"]["fileDropUploads"],
+                         {"admin": 1, "teacher": 1, "learner": 0})
+        blob = json.dumps(obj)
+        self.assertNotIn("teacher1", blob)
+        self.assertNotIn("from-admin.odt", blob)
+        self.assertNotIn("admin-drop", blob)
+        self.assertNotIn("hw.txt", blob)
+
+    def test_empty_db_emits_zero_by_group(self):
+        empty = os.path.join(self.tmp, "empty.sqlite")
+        sqlite3.connect(empty).close()
+        obj = parse(run_hook(empty, ["day", DAY]))
+        self.assertEqual(obj["workflows"]["worksheetShares"], 0)
+        self.assertEqual(obj["workflows"]["byGroup"]["worksheetShares"],
+                         {"admin": 0, "teacher": 0, "learner": 0})
+        self.assertEqual(obj["workflows"]["byGroup"]["fileDropUploads"],
+                         {"admin": 0, "teacher": 0, "learner": 0})
 
 
 if __name__ == "__main__":
