@@ -1,4 +1,4 @@
-"""Unit tests for hooks/usage.sh (idea#413, idea#431). Run: python3 -m unittest tests.test_usage_hook"""
+"""Unit tests for hooks/usage.sh (idea#413, idea#431, idea#464). Run: python3 -m unittest tests.test_usage_hook"""
 import json
 import os
 import sqlite3
@@ -259,6 +259,184 @@ class UsageHookTests(unittest.TestCase):
                          {"admin": 0, "teacher": 0, "learner": 0})
         self.assertEqual(obj["workflows"]["byGroup"]["fileDropUploads"],
                          {"admin": 0, "teacher": 0, "learner": 0})
+
+    def test_apps_opened_omitted_when_counter_table_missing(self):
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertNotIn("appsOpened", obj)
+        self.assertNotIn("appsOpenedByGroup", obj)
+        self.assertNotIn("documents", obj)
+        self.assertNotIn("documentsCreated", obj)
+
+    def test_apps_opened_empty_object_when_counter_installed_but_idle(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_idea_usage_apps_opened "
+            "(day TEXT, grp TEXT, app_id TEXT, n INTEGER, PRIMARY KEY (day, grp, app_id))"
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertEqual(obj["appsOpened"], {})
+        self.assertEqual(obj["appsOpenedByGroup"], {})
+        self.assertIsInstance(obj["appsOpened"], dict)
+
+    def test_apps_opened_sums_by_app_and_group(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_idea_usage_apps_opened "
+            "(day TEXT, grp TEXT, app_id TEXT, n INTEGER, PRIMARY KEY (day, grp, app_id))"
+        )
+        conn.executemany(
+            "INSERT INTO oc_idea_usage_apps_opened VALUES (?,?,?,?)",
+            [
+                (DAY, "teacher", "files", 3),
+                (DAY, "learner", "files", 2),
+                (DAY, "admin", "files", 1),
+                (DAY, "teacher", "text", 4),
+                (DAY, "learner", "richdocuments", 1),
+                ("2026-11-11", "teacher", "files", 99),  # other day
+            ],
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertEqual(obj["appsOpened"], {"files": 6, "text": 4, "richdocuments": 1})
+        self.assertEqual(obj["appsOpenedByGroup"]["files"],
+                         {"admin": 1, "teacher": 3, "learner": 2})
+        self.assertEqual(obj["appsOpenedByGroup"]["text"],
+                         {"admin": 0, "teacher": 4, "learner": 0})
+        self.assertEqual(obj["appsOpenedByGroup"]["richdocuments"],
+                         {"admin": 0, "teacher": 0, "learner": 1})
+        blob = json.dumps(obj)
+        self.assertNotIn("teacher1", blob)
+        self.assertNotIn("thabo", blob)
+
+    def test_documents_null_when_activity_disabled(self):
+        """Activity off or missing → omit documents (null), never a zero count."""
+        import datetime
+        login_ts = int(datetime.datetime(2026, 11, 12, 10, 0, 0).timestamp())
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_appconfig (appid TEXT, configkey TEXT, configvalue TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO oc_appconfig VALUES ('activity','enabled','no')"
+        )
+        conn.execute(
+            "CREATE TABLE oc_activity "
+            "(object_id INTEGER, user TEXT, timestamp INTEGER, app TEXT, type TEXT, subject TEXT)"
+        )
+        # A real created_self row must still be ignored while the app is off.
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (10,'teacher1',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertNotIn("documents", obj)
+        self.assertNotIn("documentsCreated", obj)
+
+    def test_documents_null_when_activity_table_missing(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_appconfig (appid TEXT, configkey TEXT, configvalue TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO oc_appconfig VALUES ('activity','enabled','yes')"
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertNotIn("documents", obj)
+
+    def test_documents_created_from_activity_office_mimes(self):
+        import datetime
+        login_ts = int(datetime.datetime(2026, 11, 12, 10, 0, 0).timestamp())
+        other_ts = int(datetime.datetime(2026, 11, 10, 10, 0, 0).timestamp())
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_appconfig (appid TEXT, configkey TEXT, configvalue TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO oc_appconfig VALUES ('activity','enabled','yes')"
+        )
+        conn.execute(
+            "CREATE TABLE oc_activity "
+            "(object_id INTEGER, user TEXT, timestamp INTEGER, app TEXT, type TEXT, subject TEXT)"
+        )
+        # teacher created an office text doc today (file 10 already in filecache as odt)
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (10,'teacher1',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        # duplicate row for the same object_id must count once
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (10,'teacher1',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        # learner created a sheet (file 11)
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (11,'learner1',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        # admin who is also... just admin, same odt mime on a new file
+        conn.execute("INSERT INTO oc_filecache VALUES (12, 1, 0, 'files/admin-notes.odt', ?, 1)", (login_ts,))
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (12,'admin',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        # created_public (anonymous File drop) must be left out, even if office mime
+        conn.execute("INSERT INTO oc_filecache VALUES (13, 1, 20, 'files/drop/public.odt', ?, 1)", (login_ts,))
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (13,'',?,'files','file_created','created_public')",
+            (login_ts,),
+        )
+        # non-office mime (reuse drop upload.txt = file 21, mimetype 1 is odt in fixture...
+        # file 21 is files/drop/upload.txt with mimetype 1 (odt) in the base fixture.
+        # Add a real non-office type instead.
+        conn.execute("INSERT INTO oc_mimetypes VALUES (3, 'text/plain')")
+        conn.execute("INSERT INTO oc_filecache VALUES (14, 1, 0, 'files/readme.txt', ?, 3)", (login_ts,))
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (14,'teacher1',?,'files','file_created','created_self')",
+            (login_ts,),
+        )
+        # other day
+        conn.execute(
+            "INSERT INTO oc_activity VALUES (10,'teacher1',?,'files','file_created','created_self')",
+            (other_ts,),
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertEqual(obj["documents"]["created"], 3)
+        self.assertEqual(obj["documents"]["byGroup"],
+                         {"admin": 1, "teacher": 1, "learner": 1})
+        blob = json.dumps(obj)
+        self.assertNotIn("teacher1", blob)
+        self.assertNotIn("admin-notes.odt", blob)
+        self.assertNotIn("readme.txt", blob)
+        self.assertEqual(set(obj["documents"].keys()), {"created", "byGroup"})
+        self.assertNotIn("files/", blob)
+
+    def test_documents_zero_when_activity_on_but_nothing_created(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "CREATE TABLE oc_appconfig (appid TEXT, configkey TEXT, configvalue TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO oc_appconfig VALUES ('activity','enabled','yes')"
+        )
+        conn.execute(
+            "CREATE TABLE oc_activity "
+            "(object_id INTEGER, user TEXT, timestamp INTEGER, app TEXT, type TEXT, subject TEXT)"
+        )
+        conn.commit()
+        conn.close()
+        obj = parse(run_hook(self.db, ["day", DAY]))
+        self.assertEqual(obj["documents"], {"created": 0, "byGroup": {"admin": 0, "teacher": 0, "learner": 0}})
+
+
 
 
 if __name__ == "__main__":

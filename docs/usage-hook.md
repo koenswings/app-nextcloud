@@ -1,4 +1,4 @@
-# Usage hook (idea#413, idea#431)
+# Usage hook (idea#413, idea#431, idea#464)
 
 Nextcloud ships `hooks/usage.sh`, mounted at `/hooks/usage.sh` on `nextcloud-app`. The Engine (`agent-engine-dev#308`) invokes it as `pi` with:
 
@@ -25,7 +25,7 @@ Stdout is exactly one JSON object.
 
 | Mode | Schema | Notes |
 |------|--------|--------|
-| `day YYYY-MM-DD` | `idea-usage-day/1` | `setup`, `logins`, `office`, `workflows`. `appsOpened` is omitted until Phase 3. |
+| `day YYYY-MM-DD` | `idea-usage-day/1` | `setup`, `logins`, `office`, `workflows`, and when available `appsOpened` / `appsOpenedByGroup` and `documents`. |
 | `sample` | `idea-usage-sample/1` | Current WOPI token snapshot. |
 
 The hook never prints `engine`, `instance`, `name`, `listed`, `clock`, `collectedAt`, `hookStatus` or `skipReason`.
@@ -37,6 +37,30 @@ Workflows keep the flat totals `worksheetShares`, `editShares`, `fileDropLinks`,
 Shares are attributed with `oc_share.uid_initiator` if set, otherwise `uid_owner`, then the same Nextcloud-group mapping as Office opens (`admin` wins, then `teachers` → `teacher`, otherwise `learner`).
 
 File-drop uploads are anonymous public-link posts: `oc_filecache` has no uploader uid. The hook attributes each upload to the **link owner** (the same initiator-or-owner of the `share_type = 3` create-only share whose folder is the file's parent). That is the only identified actor, and it answers U-7 line 5 (“an action by a teacher or learner”): uploads into a teacher- or learner-owned drop folder count; uploads into an admin-owned drop folder do not. Ambiguity: the wording could also mean the person who posted the file. We cannot see that person, and treating a missing uid as `learner` would hide admin-owned drops as learner activity, so we do not do that.
+
+
+## Apps opened (idea#464)
+
+A small bundled Nextcloud app, `idea_usage`, is extracted from `bundled-apps/` like richdocuments and enabled by `25-idea-usage.sh` on first start and every later start. It listens for logged-in full-page renders (`OCP\AppFramework\Http\Events\BeforeTemplateRenderedEvent`) and stores counts only: `(UTC day, group, appId) → n` in `oc_idea_usage_apps_opened`. Group mapping is the same as Office opens and shares: admin wins, then `teachers` → teacher, otherwise learner. No user ids, paths or file names are stored.
+
+On `day YYYY-MM-DD` the hook emits:
+
+- `appsOpened`: `{<appId>: n}` summed across groups for that day. `{}` means the counter is installed and nothing was opened.
+- `appsOpenedByGroup`: `{<appId>: {admin, teacher, learner}}` (additive).
+
+Both fields are **omitted** when the counter table is missing, so the collector keeps `appsOpened` as null (UI "No data").
+
+This is a dedicated IDEA counter, not the web access log.
+
+## Documents created (idea#464)
+
+When the Nextcloud **activity** app is enabled, `day YYYY-MM-DD` also emits `documents: {created: n, byGroup: {admin, teacher, learner}}`. That is the office-document count for the day (text / sheet / slides, the same `mime_kind` split as `office.mime`).
+
+Source: `oc_activity` rows with `app='files'`, `type='file_created'` and `subject='created_self'`, deduplicated by `object_id`, joined to `oc_filecache.mimetype`. The actor is the activity `user` column, mapped to a group the same way as Office opens. Anonymous File drop uploads (`created_public`) are left out. Queries are read-only.
+
+If the activity app is disabled, or the `oc_activity` table is missing, the hook **omits** `documents` (collector: null, UI "No data"). It does not emit `0`, which would look like a measured day with no documents. The issue also sketched a fallback from `oc_filecache_extended.upload_time`; that is left for a follow-up once the collector can mark a count as approximate (see the PR).
+
+A later Pi check should confirm that activity is enabled by default, that Files "New document" writes `file_created` / `created_self`, and that the counter listener fires for Files, Office, Text and Photos page opens.
 
 ## Sample document ids
 

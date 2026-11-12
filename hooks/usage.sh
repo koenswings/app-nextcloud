@@ -1,5 +1,5 @@
 #!/bin/sh
-# hooks/usage.sh — Nextcloud usage hook (idea#413, idea#431)
+# hooks/usage.sh — Nextcloud usage hook (idea#413, idea#431, idea#464)
 # Contract: koenswings/agent-engine-dev#308 docs/USAGE-CONTRACT.md
 # Listed:  docker compose exec -T nextcloud-app /hooks/usage.sh day YYYY-MM-DD|sample
 # Unlisted: docker exec -i <container> sh -s -- day YYYY-MM-DD|sample  < hooks/usage.sh
@@ -370,6 +370,103 @@ def workflows(store, mapping, day):
     return out
 
 
+
+def activity_enabled(store):
+    """True only when the activity app is explicitly enabled.
+
+    Nextcloud stores this as oc_appconfig (appid=activity, configkey=enabled).
+    'yes' is on for everyone; a JSON group list is on for those groups. 'no',
+    empty or a missing row means disabled. The hook reports documents as
+    omitted (collector: null, UI "No data"), not 0, when this is false.
+    """
+    if not store.has("appconfig"):
+        return False
+    rows = store.q(
+        "SELECT configvalue FROM %s WHERE appid='activity' AND configkey='enabled'"
+        % t("appconfig")
+    )
+    if not rows:
+        return False
+    val = str(rows[0].get("configvalue") or "").strip()
+    if val.lower() in ("", "no", "false", "0"):
+        return False
+    if val.lower() == "yes":
+        return True
+    if val.startswith("["):
+        return True
+    return False
+
+
+def apps_opened(store, day):
+    """Return {appsOpened, appsOpenedByGroup} or None when the counter table is missing."""
+    if not store.has("idea_usage_apps_opened"):
+        return None
+    totals = {}
+    by_group = {}
+    for row in store.q(
+        "SELECT day, grp, app_id, n FROM %s" % t("idea_usage_apps_opened")
+    ):
+        d = str(row.get("day") or "")[:10]
+        if d != day:
+            continue
+        app_id = str(row.get("app_id") or "")
+        if not app_id:
+            continue
+        grp = str(row.get("grp") or "learner")
+        if grp not in ("admin", "teacher", "learner"):
+            grp = "learner"
+        try:
+            n = int(row.get("n") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        totals[app_id] = totals.get(app_id, 0) + n
+        if app_id not in by_group:
+            by_group[app_id] = empty_by_group()
+        by_group[app_id][grp] += n
+    return {"appsOpened": totals, "appsOpenedByGroup": by_group}
+
+
+def documents_created(store, mapping, day):
+    """Office documents created that day, or None when activity is off or missing.
+
+    Source: oc_activity rows with app='files', type='file_created',
+    subject='created_self', deduplicated by object_id, joined to
+    oc_filecache.mimetype and filtered with the same mime_kind split as
+    office.mime. created_public (anonymous File drop) is left out.
+    """
+    if not activity_enabled(store) or not store.has("activity"):
+        return None
+    mime_of = {}
+    if store.has("filecache") and store.has("mimetypes"):
+        types = {str(r["id"]): r["mimetype"] for r in store.q("SELECT id, mimetype FROM %s" % t("mimetypes"))}
+        for f in store.q("SELECT fileid, mimetype FROM %s" % t("filecache")):
+            mime_of[str(f["fileid"])] = types.get(str(f["mimetype"]), "")
+    rows = store.q(
+        "SELECT object_id, `user` AS actor, timestamp FROM %s "
+        "WHERE app='files' AND type='file_created' AND subject='created_self'"
+        % t("activity")
+    )
+    seen = set()
+    created = 0
+    by = empty_by_group()
+    for row in rows:
+        if ts_to_day(row.get("timestamp")) != day:
+            continue
+        oid = row.get("object_id")
+        if oid is None or oid == "":
+            continue
+        oid = str(oid)
+        if oid in seen:
+            continue
+        if mime_kind(mime_of.get(oid, "")) is None:
+            continue
+        seen.add(oid)
+        created += 1
+        uid = str(row.get("actor") or "")
+        by[primary_group(mapping.get(uid, []) if uid else [])] += 1
+    return {"created": created, "byGroup": by}
+
+
 def day_payload(store, day):
     users, mapping = user_groups(store)
     setup = setup_from_groups(users, mapping)
@@ -391,7 +488,7 @@ def day_payload(store, day):
         "byGroup": office["byGroup"],
         "mime": office["mime"],
     }
-    return {
+    payload = {
         "schema": "idea-usage-day/1",
         "day": day,
         "app": APP,
@@ -401,6 +498,14 @@ def day_payload(store, day):
         "office": day_office,
         "workflows": workflows(store, mapping, day),
     }
+    opened = apps_opened(store, day)
+    if opened is not None:
+        payload["appsOpened"] = opened["appsOpened"]
+        payload["appsOpenedByGroup"] = opened["appsOpenedByGroup"]
+    docs = documents_created(store, mapping, day)
+    if docs is not None:
+        payload["documents"] = docs
+    return payload
 
 
 def sample_payload(store):
@@ -676,6 +781,97 @@ function office_from($pdo, $prefix, $mapping, $teachers, $day) {
     return $r;
 }
 
+
+function table_exists($pdo, $name) {
+    if (!$pdo) return false;
+    try {
+        $rows = q($pdo, "SELECT name FROM sqlite_master WHERE type='table'");
+        if ($rows) {
+            foreach ($rows as $r) {
+                if (isset($r['name']) && $r['name'] === $name) return true;
+            }
+            return false;
+        }
+    } catch (Exception $e) {}
+    try {
+        $rows = q($pdo, "SHOW TABLES");
+        foreach ($rows as $r) {
+            $n = array_values($r)[0];
+            if ($n === $name) return true;
+        }
+    } catch (Exception $e) {}
+    return false;
+}
+
+function json_object($arr) {
+    return $arr ? $arr : new stdClass();
+}
+
+function empty_by_group_php() {
+    return array('admin'=>0,'teacher'=>0,'learner'=>0);
+}
+
+function activity_enabled($pdo, $prefix) {
+    if (!$pdo || !table_exists($pdo, $prefix . 'appconfig')) return false;
+    $rows = q($pdo, "SELECT configvalue FROM {$prefix}appconfig WHERE appid='activity' AND configkey='enabled'");
+    if (!$rows) return false;
+    $val = trim((string)(isset($rows[0]['configvalue']) ? $rows[0]['configvalue'] : ''));
+    $lower = strtolower($val);
+    if ($val === '' || $lower === 'no' || $lower === 'false' || $lower === '0') return false;
+    if ($lower === 'yes') return true;
+    if (strlen($val) && $val[0] === '[') return true;
+    return false;
+}
+
+function apps_opened_php($pdo, $prefix, $day) {
+    if (!$pdo || !table_exists($pdo, $prefix . 'idea_usage_apps_opened')) return null;
+    $totals = array();
+    $byGroup = array();
+    foreach (q($pdo, "SELECT day, grp, app_id, n FROM {$prefix}idea_usage_apps_opened") as $row) {
+        $d = substr((string)(isset($row['day']) ? $row['day'] : ''), 0, 10);
+        if ($d !== $day) continue;
+        $appId = (string)(isset($row['app_id']) ? $row['app_id'] : '');
+        if ($appId === '') continue;
+        $grp = (string)(isset($row['grp']) ? $row['grp'] : 'learner');
+        if ($grp !== 'admin' && $grp !== 'teacher' && $grp !== 'learner') $grp = 'learner';
+        $n = intval(isset($row['n']) ? $row['n'] : 0);
+        if (!isset($totals[$appId])) $totals[$appId] = 0;
+        $totals[$appId] += $n;
+        if (!isset($byGroup[$appId])) $byGroup[$appId] = empty_by_group_php();
+        $byGroup[$appId][$grp] += $n;
+    }
+    return array('appsOpened'=>json_object($totals),'appsOpenedByGroup'=>json_object($byGroup));
+}
+
+function documents_created_php($pdo, $prefix, $mapping, $teachers, $day) {
+    if (!$pdo || !activity_enabled($pdo, $prefix) || !table_exists($pdo, $prefix . 'activity')) return null;
+    $mimeOf = array();
+    if (table_exists($pdo, $prefix . 'filecache') && table_exists($pdo, $prefix . 'mimetypes')) {
+        $types = array();
+        foreach (q($pdo, "SELECT id, mimetype FROM {$prefix}mimetypes") as $r) $types[(string)$r['id']] = $r['mimetype'];
+        foreach (q($pdo, "SELECT fileid, mimetype FROM {$prefix}filecache") as $f) {
+            $mimeOf[(string)$f['fileid']] = isset($types[(string)$f['mimetype']]) ? $types[(string)$f['mimetype']] : '';
+        }
+    }
+    $created = 0;
+    $by = empty_by_group_php();
+    $seen = array();
+    foreach (q($pdo, "SELECT object_id, `user` AS actor, timestamp FROM {$prefix}activity WHERE app='files' AND type='file_created' AND subject='created_self'") as $row) {
+        if (ts_day(isset($row['timestamp']) ? $row['timestamp'] : null) !== $day) continue;
+        if (!isset($row['object_id']) || $row['object_id'] === '' || $row['object_id'] === null) continue;
+        $oid = (string)$row['object_id'];
+        if (isset($seen[$oid])) continue;
+        $mt = isset($mimeOf[$oid]) ? $mimeOf[$oid] : '';
+        if (mime_kind($mt) === null) continue;
+        $seen[$oid] = true;
+        $created++;
+        $uid = (string)(isset($row['actor']) ? $row['actor'] : '');
+        $g = primary_group(isset($mapping[$uid]) ? $mapping[$uid] : array(), $teachers);
+        $by[$g]++;
+    }
+    return array('created'=>$created,'byGroup'=>$by);
+}
+
 if ($mode === 'sample') {
     $office = $pdo ? office_from($pdo, $prefix, $mapping, $teachers, null) : array(
         'tokens'=>0,'distinctDocuments'=>0,'read'=>0,'edit'=>0,
@@ -763,12 +959,20 @@ if ($pdo) {
         }
     }
 }
-emit(array(
+$out = array(
     'schema'=>'idea-usage-day/1','day'=>$day,'app'=>'nextcloud','demo'=>false,
     'setup'=>$setup,'logins'=>$logins,
     'office'=>array('opens'=>$office['opens'],'distinctDocuments'=>$office['distinctDocuments'],
         'read'=>$office['read'],'edit'=>$office['edit'],'estimatedMinutes'=>isset($office['estimatedMinutes'])?$office['estimatedMinutes']:0,
         'byGroup'=>$office['byGroup'],'mime'=>$office['mime']),
     'workflows'=>$wf,
-));
+);
+$opened = apps_opened_php($pdo, $prefix, $day);
+if ($opened !== null) {
+    $out['appsOpened'] = $opened['appsOpened'];
+    $out['appsOpenedByGroup'] = $opened['appsOpenedByGroup'];
+}
+$docs = documents_created_php($pdo, $prefix, $mapping, $teachers, $day);
+if ($docs !== null) $out['documents'] = $docs;
+emit($out);
 PHP
