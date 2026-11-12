@@ -1,0 +1,1 @@
+../post-installation/25-idea-usage.sh

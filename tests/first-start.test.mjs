@@ -79,6 +79,8 @@ it('first start: installs, Office in post-installation, then Files + Office in b
   assert.equal(s.system.allow_local_remote_servers, true)
   assert.equal(s.mounts.length, 1)
   assert.equal(s.mounts[0].configuration.datadir, join(filesRoot, 'grade5-abc123'))
+  assert.equal(s.system.skeletondirectory, '')
+  assert.equal(s.system.templatedirectory, '')
   // Office ran before Files in post-installation; no occ write was attempted while uninstalled
   const firstInstall = s.calls.findIndex(c => c[0] === 'maintenance:install')
   assert.ok(s.calls.slice(0, firstInstall).every(c => c[0] === 'status'))
@@ -146,17 +148,21 @@ it('empty or bad IDEA_COLLABORA_URL: skip, no occ calls', () => {
   assert.deepEqual(state().calls, [])
 })
 
-it('offline first start: bundled richdocuments 8.8.3 (NC31) is extracted, enabled and configured', () => {
+it('offline first start: bundled richdocuments 8.8.3 and idea_usage are extracted and enabled', () => {
   setState({ installed: false, appsPresent: ['files_external'], online: false })
   start(env(creds))
   const info = readFileSync(join(customApps, 'richdocuments/appinfo/info.xml'), 'utf8')
   assert.match(info, /<version>8\.8\.3<\/version>/)
   assert.match(info, /min-version="31" max-version="31"/)
+  const usageInfo = readFileSync(join(customApps, 'idea_usage/appinfo/info.xml'), 'utf8')
+  assert.match(usageInfo, /<id>idea_usage<\/id>/)
+  assert.match(usageInfo, /min-version="31" max-version="31"/)
   const s = state()
   assert.ok(s.appsEnabled.includes('richdocuments'))
+  assert.ok(s.appsEnabled.includes('idea_usage'))
   assert.ok(!s.calls.some(c => c[0] === 'app:install'), 'no app store download')
   assert.equal(s.app.richdocuments.wopi_url, URL)
-  assert.deepEqual(readdirSync(customApps), ['richdocuments'], 'no temp dirs left')
+  assert.deepEqual(readdirSync(customApps).sort(), ['idea_usage', 'richdocuments'], 'no temp dirs left')
 })
 
 it('bundled apps: existing app never overwritten; bad checksum skipped', () => {
@@ -166,6 +172,7 @@ it('bundled apps: existing app never overwritten; bad checksum skipped', () => {
   assert.equal(spawnSync(hook, [], { env: env() }).status, 0)
   assert.match(readFileSync(join(customApps, 'richdocuments/appinfo/info.xml'), 'utf8'), /9\.9\.9/)
   rmSync(join(customApps, 'richdocuments'), { recursive: true })
+  if (readdirSync(customApps).includes('idea_usage')) rmSync(join(customApps, 'idea_usage'), { recursive: true })
   const bad = join(dir, 'bad'); mkdirSync(bad)
   copyFileSync(join(BUNDLED, 'richdocuments-v8.8.3.tar.gz'), join(bad, 'richdocuments-v8.8.3.tar.gz'))
   writeFileSync(join(bad, 'SHA256SUMS'), '0000  richdocuments-v8.8.3.tar.gz\n')

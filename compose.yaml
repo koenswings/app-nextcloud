@@ -10,7 +10,7 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "1.4-31.0.1"
+  version: "1.5-31.0.1"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # Measured on idea04 (Pi 4, 2026-10-28, idea#351): 30.0.6 -> 31.0.1 first start 66-69 s to status.php maintenance:false, needsDbUpgrade:false (6 users, 1203 files, db 163 MB). About 4x margin: real instances add Office and more apps to upgrade.
@@ -46,7 +46,7 @@ services:
     #image: nextcloud
     image: koenswings/nextcloud:1.0-31.0.1@sha256:3fcd398e8e9b0d46cc84ecebe70a95b4ad97ffd85f974419376d7ddd68a1823d
     labels:
-      x-app-version: "1.4-31.0.1"
+      x-app-version: "1.5-31.0.1"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -125,7 +125,7 @@ services:
     #image: mariadb
     image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
-      x-app-version: "1.4-31.0.1"
+      x-app-version: "1.5-31.0.1"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -143,7 +143,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "1.4-31.0.1"
+      x-app-version: "1.5-31.0.1"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.

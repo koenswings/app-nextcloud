@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/3.0/info.xsd">
+	<id>idea_usage</id>
+	<name>IDEA usage counter</name>
+	<summary>Counts daily Nextcloud app opens by group for the IDEA usage hook</summary>
+	<description><![CDATA[A small IDEA helper that counts full-page app opens for logged-in users.
+
+It stores only `(day, group, app id) → n`. Group is admin, teacher or learner
+(the same mapping as Office opens and shares: admin wins, then the teachers
+group, otherwise learner). No user ids, paths or file names are stored.
+
+The App Disk usage hook reads the table for `appsOpened`. This app has no UI.]]></description>
+	<version>1.0.0</version>
+	<licence>agpl</licence>
+	<author>IDEA</author>
+	<namespace>IdeaUsage</namespace>
+	<category>tools</category>
+	<bugs>https://github.com/koenswings/idea/issues/464</bugs>
+	<repository type="git">https://github.com/koenswings/app-nextcloud.git</repository>
+	<dependencies>
+		<nextcloud min-version="31" max-version="31"/>
+	</dependencies>
+</info>
