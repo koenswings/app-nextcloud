@@ -68,6 +68,9 @@ services:
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
       # All hook folders (pre-installation, post-installation, before-starting).
       - ./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro
+      # idea#464: idea-skeleton.config.php (empty skeleton/templates), copied into config/ by the
+      # pre-installation + before-starting 05-idea-skeleton-config.sh hook before maintenance:install.
+      - ./config:/idea-config:ro
       # Apps shipped on the App Disk (richdocuments for offline Office), see docs/first-start.md.
       - ./bundled-apps:/idea-bundled-apps:ro
       # USB stick reconcile (idea#193), run by the Engine via docker exec.

@@ -3,7 +3,7 @@ idea_app_version: "1.0"
 
 compatibility:
   engine_min: "0.9.0"
-  # 1.5-31.0.1 (idea_usage counter + empty skeleton, idea#464): on-Pi checks on idea03 at c460aca and 1224f54, throwaway compose projects.
+  # 1.5-31.0.1 (idea_usage counter + empty skeleton, idea#464): on-Pi checks on idea03 at c460aca, 1224f54 and 3fa97b1 (pre-install skeleton config), throwaway compose projects.
   engine_tested:
     commit: "537b16d"
     version: "1.0"
