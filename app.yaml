@@ -3,10 +3,11 @@ idea_app_version: "1.0"
 
 compatibility:
   engine_min: "0.9.0"
+  # 1.5-31.0.1 (idea_usage counter, idea#464): 7-step on-Pi check on idea03, throwaway compose project.
   engine_tested:
-    commit: "aec3930"
+    commit: "537b16d"
     version: "1.0"
-    date: "2026-11-11"
+    date: "2026-11-12"
 
 services:
   - name: nextcloud-app
