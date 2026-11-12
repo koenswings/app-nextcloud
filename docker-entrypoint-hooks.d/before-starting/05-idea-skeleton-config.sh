@@ -1,0 +1,1 @@
+../pre-installation/05-idea-skeleton-config.sh

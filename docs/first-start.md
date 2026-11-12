@@ -8,18 +8,20 @@ koenswings/agent-engine-dev#202; the fallback is the IDEA default `admin911!`) a
 
 The whole `docker-entrypoint-hooks.d/` folder is mounted read-only. Order on the first start:
 
+0. `pre-installation/05-idea-skeleton-config.sh` — copy `config/idea-skeleton.config.php` (bind `./config:/idea-config:ro`) into Nextcloud's `config/` after the image has laid down its stock config files and **before** `maintenance:install`, so the install-time `admin` also gets an empty home (idea#464). Nextcloud merges every `config/*.config.php` over `config.php`, so `skeletondirectory` and `templatedirectory` stay empty while the file is in place. File copy only, no `occ`.
 1. `maintenance:install`
 2. `post-installation/20-idea-bundled-apps.sh` — extract App Disk apps (`bundled-apps/`, richdocuments 8.8.3 for NC 31 and `idea_usage` 1.0.0, sha256-checked) into `custom_apps/` when missing; never overwrites
 2b. `post-installation/25-idea-usage.sh` — enable `idea_usage` (the IDEA apps-opened counter, idea#464)
-2c. `post-installation/26-idea-skeleton.sh` — set `skeletondirectory` and `templatedirectory` to empty, so a new user's first login copies no example files (idea#464). Nextcloud 31 copies stock templates independently of the skeleton, so both must be empty.
+2c. `post-installation/26-idea-skeleton.sh` — fallback (a start without the `./config` bind): set `skeletondirectory` and `templatedirectory` to empty, so a new user's first login copies no example files (idea#464). Nextcloud 31 copies stock templates independently of the skeleton, so both must be empty.
 2d. `post-installation/30-idea-office.sh` — enable richdocuments, point it at CODE (`IDEA_COLLABORA_URL`)
+2e. `before-starting/05-idea-skeleton-config.sh` — symlink; puts the config file in place on existing installs (updateApp / restart), only when missing or different
 3. `before-starting/10-idea-files.sh` — Files Disk storages (idea#137)
 3b. `before-starting/20-idea-bundled-apps.sh` — symlink; lets existing installs pick up the bundle
 3c. `before-starting/25-idea-usage.sh` — symlink; enables the counter on existing installs
 3d. `before-starting/26-idea-skeleton.sh` — symlink; applies the empty skeleton on existing installs (updateApp / restart / after a core upgrade). Harmless: it only affects first login of users who have not yet received a skeleton; existing files are never touched.
 4. `before-starting/30-idea-office.sh` — symlink to the same Office script; idempotent, re-points the URL when the IP changes
 
-Every later start runs only steps 3–4 (`post-installation` does not run again; a Nextcloud core upgrade also runs `post-upgrade`, which this App does not use). All hooks exit 0 (fail open). richdocuments and `idea_usage` ship on the
+Every later start runs only steps 2e–4 (`post-installation` does not run again; a Nextcloud core upgrade also runs `post-upgrade`, which this App does not use). All hooks exit 0 (fail open). richdocuments and `idea_usage` ship on the
 App Disk, so Office and the usage counter work fully offline (chosen over baking them into the image: no image rebuild,
 and existing installs get them too). Office (CODE) publishes **no host port**: each instance has its own `code`
 service on its compose network, and the root entrypoint (`idea-files-entrypoint.sh`,

@@ -16,12 +16,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const HOOKS = join(root, 'docker-entrypoint-hooks.d')
 const FAKE_OCC = join(root, 'tests/fake-occ.mjs')
 const URL = 'http://192.168.0.231:9980'
-let dir, statePath, filesRoot, customApps
+let dir, statePath, filesRoot, customApps, ncConfig
 const BUNDLED = join(root, 'bundled-apps')
 const state = () => JSON.parse(readFileSync(statePath, 'utf8'))
 const setState = (s) => writeFileSync(statePath, JSON.stringify({ calls: [], ...s }))
 const env = (extra = {}) => ({ PATH: process.env.PATH, OCC: FAKE_OCC, FAKE_OCC_STATE: statePath,
-  IDEA_FILES_ROOT: filesRoot, IDEA_COLLABORA_URL: URL, IDEA_BUNDLED_APPS: BUNDLED, IDEA_CUSTOM_APPS: customApps, ...extra })
+  IDEA_FILES_ROOT: filesRoot, IDEA_COLLABORA_URL: URL, IDEA_BUNDLED_APPS: BUNDLED, IDEA_CUSTOM_APPS: customApps,
+  IDEA_CONFIG_SRC: join(root, 'config'), IDEA_NC_CONFIG_DIR: ncConfig, ...extra })
 
 // Every hook in a folder, in the entrypoint's order (sorted), so a new hook does not need a test edit here.
 const hooksIn = (folder) => readdirSync(join(HOOKS, folder)).filter(f => f.endsWith('.sh')).sort().map(f => `${folder}/${f}`)
@@ -55,6 +56,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'idea-fs-')); statePath = join(dir, 'occ.json')
   filesRoot = join(dir, 'idea-files'); mkdirSync(join(filesRoot, 'grade5-abc123'), { recursive: true })
   customApps = join(dir, 'custom_apps'); mkdirSync(customApps)
+  ncConfig = join(dir, 'config'); mkdirSync(ncConfig)
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -64,14 +66,20 @@ it('compose: auto-install env set, whole hooks dir mounted, no Office before ins
     'IDEA_COLLABORA_URL=http://${IDEA_PUBLIC_HOST:-${ip}}:${port}', 'IDEA_COLLABORA_INTERNAL_URL=http://code:9980', './bundled-apps:/idea-bundled-apps:ro'])
     assert.ok(c.includes(k), k)
   assert.ok(c.includes('./docker-entrypoint-hooks.d:/docker-entrypoint-hooks.d:ro'))
-  assert.ok(!existsSync(join(HOOKS, 'pre-installation')), 'nothing may need occ before install')
+  assert.ok(c.includes('./config:/idea-config:ro'), 'idea#464 skeleton config bind')
+  // pre-installation runs before maintenance:install: only the skeleton config copy, and it never calls occ
+  assert.deepEqual(hooksIn('pre-installation'), ['pre-installation/05-idea-skeleton-config.sh'])
+  for (const h of hooksIn('pre-installation'))
+    assert.ok(!/\bocc\b/.test(readFileSync(join(HOOKS, h), 'utf8').split('\n').filter(l => !l.trim().startsWith('#')).join('\n')), `${h} must not call occ`)
   assert.ok(!/tailscale|100\.\d+\./i.test(c.match(/IDEA_COLLABORA_URL=.*/)[0]), 'Office URL: LAN ip only')
 })
 
 it('first start: installs, Office in post-installation, then Files + Office in before-starting', () => {
   setState({ installed: false, appsPresent: ['richdocuments', 'files_external'] })
   const log = start(env(creds))
-  assert.deepEqual(log, ['install', ...hooksIn('post-installation'), ...BEFORE])
+  assert.deepEqual(log, [...hooksIn('pre-installation'), 'install', ...hooksIn('post-installation'), ...BEFORE])
+  // idea#464: the empty-skeleton config file is in config/ before maintenance:install (install-time admin gets 0 files)
+  assert.equal(readFileSync(join(ncConfig, 'idea-skeleton.config.php'), 'utf8'), readFileSync(join(root, 'config/idea-skeleton.config.php'), 'utf8'))
   const s = state()
   assert.equal(s.installed, true)
   assert.equal(s.app.richdocuments.wopi_url, URL)
@@ -126,7 +134,7 @@ it('offline, no bundle on disk: warns, NC still starts, Files Disk still works',
   const r = spawnSync(join(HOOKS, 'post-installation/30-idea-office.sh'), [], { env: env(), encoding: 'utf8' })
   assert.equal(r.status, 0); assert.match(r.stdout, /not installed yet/)
   const log = start(env({ ...creds, IDEA_BUNDLED_APPS: join(dir, 'none') }))
-  assert.equal(log.length, 1 + hooksIn('post-installation').length + BEFORE.length)
+  assert.equal(log.length, hooksIn('pre-installation').length + 1 + hooksIn('post-installation').length + BEFORE.length)
   assert.equal(state().app.richdocuments, undefined)
   assert.equal(state().mounts.length, 1)
 })
