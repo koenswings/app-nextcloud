@@ -60,6 +60,8 @@ Source: `oc_activity` rows with `app='files'`, `type='file_created'` and `subjec
 
 If the activity app is disabled, or the `oc_activity` table is missing, the hook **omits** `documents` (collector: null, UI "No data"). It does not emit `0`, which would look like a measured day with no documents. The issue also sketched a fallback from `oc_filecache_extended.upload_time`; that is left for a follow-up once the collector can mark a count as approximate (see the PR).
 
+Stock Nextcloud 31 copies `core/skeleton` (about 17 example files) and the shipped templates into a new user's home on first login. Those `created_self` office documents inflate `documents.created`. `26-idea-skeleton.sh` sets `skeletondirectory` and `templatedirectory` to empty on first start and every later start, so a new user's first login creates no files. Existing users' already-copied files are not changed.
+
 A later Pi check should confirm that activity is enabled by default, that Files "New document" writes `file_created` / `created_self`, and that the counter listener fires for Files, Office, Text and Photos page opens.
 
 ## Sample document ids

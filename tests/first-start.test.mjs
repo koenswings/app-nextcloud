@@ -79,6 +79,8 @@ it('first start: installs, Office in post-installation, then Files + Office in b
   assert.equal(s.system.allow_local_remote_servers, true)
   assert.equal(s.mounts.length, 1)
   assert.equal(s.mounts[0].configuration.datadir, join(filesRoot, 'grade5-abc123'))
+  assert.equal(s.system.skeletondirectory, '')
+  assert.equal(s.system.templatedirectory, '')
   // Office ran before Files in post-installation; no occ write was attempted while uninstalled
   const firstInstall = s.calls.findIndex(c => c[0] === 'maintenance:install')
   assert.ok(s.calls.slice(0, firstInstall).every(c => c[0] === 'status'))

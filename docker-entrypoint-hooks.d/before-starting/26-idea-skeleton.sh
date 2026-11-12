@@ -1,0 +1,1 @@
+../post-installation/26-idea-skeleton.sh
