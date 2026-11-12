@@ -35,7 +35,10 @@ it('app.yaml: engine_tested is set from the on-Pi check, idea_app_version unchan
 })
 
 it('release notes name 1.5-31.0.1', () => {
-  assert.match(readFileSync(join(root, 'docs/releases.md'), 'utf8'), /^## 1\.5-31\.0\.1$/m)
+  const notes = readFileSync(join(root, 'docs/releases.md'), 'utf8')
+  assert.match(notes, /^## 1\.5-31\.0\.1$/m)
+  assert.match(notes, /before `maintenance:install`/, '#23: skeleton config in place before install')
+  assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), '#23 config file ships in the release')
 })
 
 it('agent-app-dev check-compose --tag 1.5-31.0.1 (when AAD_CHECK_COMPOSE is set)', { skip: !process.env.AAD_CHECK_COMPOSE || !existsSync(process.env.AAD_CHECK_COMPOSE) }, () => {
