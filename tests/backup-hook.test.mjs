@@ -89,22 +89,60 @@ it('clean: removes only the dump files, idempotent', () => {
   assert.equal(run(CLEAN, { IDEA_BACKUP_DB_DIR: join(dir, 'nope') }).status, 0)
 })
 
-it('restore hook: once per dump id, maintenance off then files:scan --all; no-op without a dump', () => {
-  const state = join(dir, 'occ.json'), rec = join(dir, 'restore-id')
-  writeFileSync(state, JSON.stringify({ installed: true, calls: [], system: {} }))
-  const env = { PATH: process.env.PATH, OCC: FAKE_OCC, FAKE_OCC_STATE: state, IDEA_RESTORE_DB_DIR: out, IDEA_RESTORE_STATE: rec }
-  const go = () => { const r = spawnSync(RESTORE, [], { encoding: 'utf8', env }); assert.equal(r.status, 0, r.stdout + r.stderr); return r.stdout }
-  go(); assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')).calls, [], 'no dump: nothing')
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+const until = async (f, ms = 8000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) return false; await sleep(50) } return true }
+
+it('restore hook: quick maintenance off, then a detached worker scans once Apache is up; once per dump id', async () => {
+  const state = join(dir, 'occ.json'), data = join(dir, 'ncdata'), status = join(dir, 'status.json')
+  mkdirSync(data)
+  writeFileSync(state, JSON.stringify({ calls: [] }))
+  writeFileSync(join(bin, 'curl'), `#!/bin/sh\ncat "${status}" 2>/dev/null || exit 7\n`); chmodSync(join(bin, 'curl'), 0o755)
+  const env = { PATH: `${bin}:${process.env.PATH}`, OCC: FAKE_OCC, FAKE_OCC_STATE: state, IDEA_RESTORE_DB_DIR: out,
+    IDEA_RESTORE_DATA: data, IDEA_RESTORE_INTERVAL: '0.1' }
+  const calls = () => JSON.parse(readFileSync(state, 'utf8')).calls
+  const go = () => { const t = Date.now(); const r = spawnSync(RESTORE, [], { encoding: 'utf8', env, timeout: 5000 }); assert.equal(r.status, 0, r.stdout + r.stderr); assert.ok(Date.now() - t < 3000, 'hook returns at once'); return r.stdout }
+  const marker = join(data, '.idea-restore-id'), running = join(data, '.idea-restore-scan.running'), log = join(data, '.idea-restore-scan.log')
+
+  go(); assert.deepEqual(calls(), [], 'no dump: nothing')
   assert.equal(run(DUMP).status, 0)
-  assert.match(go(), /restored from hook backup/)
-  const calls = JSON.parse(readFileSync(state, 'utf8')).calls
-  assert.deepEqual(calls.slice(0, 2), [['maintenance:mode', '--off'], ['files:scan', '--all']])
-  assert.equal(readFileSync(rec, 'utf8'), readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'))
-  go(); assert.equal(JSON.parse(readFileSync(state, 'utf8')).calls.length, calls.length, 'same id: not again')
-  // A new dump id with a failing scan is not recorded, so the next start tries again.
+  const id = readFileSync(join(out, 'nextcloud.sql.id'), 'utf8')
+  // Apache not up yet: the hook turns maintenance off and returns; the worker waits.
+  assert.match(go(), /files:scan --all starts once Apache is up/)
+  assert.deepEqual(calls(), [['maintenance:mode', '--off']])
+  assert.ok(existsSync(running))
+  await sleep(400)
+  assert.deepEqual(calls(), [['maintenance:mode', '--off']], 'no scan before status.php answers')
+  writeFileSync(status, '{"installed":true,"maintenance":false,"needsDbUpgrade":false}')
+  assert.ok(await until(() => existsSync(marker)), 'worker wrote the done marker')
+  assert.deepEqual(calls(), [['maintenance:mode', '--off'], ['files:scan', '--all']])
+  assert.equal(readFileSync(marker, 'utf8'), id)
+  assert.ok(await until(() => !existsSync(running)))
+  assert.match(readFileSync(log, 'utf8'), /Apache up after [\d.]+s: occ files:scan --all[\s\S]*files:scan --all done/)
+  go(); await sleep(300); assert.equal(calls().length, 2, 'same id: nothing again')
+
+  // New dump id, failing scan: no marker, retried on the next start.
   assert.equal(run(DUMP).status, 0)
-  env.FAKE_OCC_SCAN_FAIL = '1'; assert.match(go(), /files:scan --all failed/)
-  assert.notEqual(readFileSync(rec, 'utf8'), readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'))
+  env.FAKE_OCC_SCAN_FAIL = '1'; go()
+  assert.ok(await until(() => !existsSync(running)))
+  assert.equal(readFileSync(marker, 'utf8'), id, 'old marker kept')
+  assert.match(readFileSync(log, 'utf8'), /files:scan --all failed \(retried on next start\)/)
+  // A crashed worker leaves .running behind: the next start clears it and runs again.
+  writeFileSync(running, 'stale\n')
   env.FAKE_OCC_SCAN_FAIL = '0'; go()
-  assert.equal(readFileSync(rec, 'utf8'), readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'))
+  assert.ok(await until(() => readFileSync(marker, 'utf8') === readFileSync(join(out, 'nextcloud.sql.id'), 'utf8')))
+  assert.ok(await until(() => !existsSync(running)))
+})
+
+it('restore hook: worker gives up after IDEA_RESTORE_WAIT without a scan or marker', async () => {
+  const state = join(dir, 'occ.json'), data = join(dir, 'ncdata'); mkdirSync(data)
+  writeFileSync(state, JSON.stringify({ calls: [] }))
+  writeFileSync(join(bin, 'curl'), '#!/bin/sh\nexit 7\n'); chmodSync(join(bin, 'curl'), 0o755)
+  assert.equal(run(DUMP).status, 0)
+  const env = { PATH: `${bin}:${process.env.PATH}`, OCC: FAKE_OCC, FAKE_OCC_STATE: state, IDEA_RESTORE_DB_DIR: out,
+    IDEA_RESTORE_DATA: data, IDEA_RESTORE_INTERVAL: '1', IDEA_RESTORE_WAIT: '1' }
+  assert.equal(spawnSync(RESTORE, [], { env }).status, 0)
+  assert.ok(await until(() => !existsSync(join(data, '.idea-restore-scan.running'))))
+  assert.ok(!existsSync(join(data, '.idea-restore-id')))
+  assert.match(readFileSync(join(data, '.idea-restore-scan.log'), 'utf8'), /gave up after 1s/)
+  assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')).calls, [['maintenance:mode', '--off']])
 })

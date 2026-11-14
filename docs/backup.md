@@ -47,11 +47,22 @@ entrypoint imports `*.sql` from there **only when the datadir is empty**, so on 
    has no TCP, so the db healthcheck (`mariadb-admin ping -h 127.0.0.1`) only turns healthy after
    the import. `nextcloud-app` has `depends_on: nextcloud-db: service_healthy`, so Nextcloud
    starts after the import (`start_period` 900 s covers a large import).
-2. `before-starting/00-idea-restore.sh` (first hook) sees a dump id it has not recorded:
-   `occ maintenance:mode --off` (config.php was archived with maintenance on), then
-   `occ files:scan --all`, then records the id in `data/nextcloud/data/.idea-restore-id`.
-   It runs once per dump; a failed scan is retried on the next start. It always exits 0.
-3. **Fallback or cold archive** (`data/db` present): a normal start; any dump in the archive is ignored.
+2. `before-starting/00-idea-restore.sh` (first hook, as www-data) sees a dump id without a done
+   marker. It only does the quick part before Apache: `occ maintenance:mode --off` (config.php
+   was archived with maintenance on), then starts a detached worker (`setsid "$0" --scan-worker
+   <id> &`) and exits. So the hook does not use up the port-ready budget (`x-app.healthTimeout`
+   300 s), however many files the restore has.
+3. The worker survives the hook and the exec of Apache. It polls `http://127.0.0.1/status.php`
+   (every 5 s, up to 1 h) until it answers `installed:true` and `maintenance:false`, then runs
+   `occ files:scan --all`. On success it writes the done marker. Until the scan is done the
+   file cache can lag the files on disk; users can already log in.
+   Files in the container (on the disk under `data/nextcloud/data/`):
+   - `/var/www/html/data/.idea-restore-id`: done marker, the dump id;
+   - `/var/www/html/data/.idea-restore-scan.log`: worker log (wait time, scan result);
+   - `/var/www/html/data/.idea-restore-scan.running`: a worker runs in this container.
+   Once per dump id: no marker means try again. A crash, failed scan or timeout leaves no
+   marker, and the next start clears a leftover `.running` and tries again. The hook always exits 0.
+4. **Fallback or cold archive** (`data/db` present): a normal start; any dump in the archive is ignored.
 
 ## verify
 

@@ -13,7 +13,7 @@ same pinned images, so no image is rebuilt or republished.
 - **Restore of a hook archive**: `./data/backup/db` is MariaDB's initdb folder, so an empty datadir
   imports the dump. New db healthcheck (`mariadb-admin ping` on TCP) and
   `depends_on: service_healthy` on `nextcloud-app`. New `before-starting/00-idea-restore.sh`:
-  maintenance off and `files:scan --all`, once per dump.
+  maintenance off before Apache, then a detached `files:scan --all` once Apache answers, once per dump.
 - **Images** unchanged since 1.2 (same digests).
 
 **Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder.

@@ -46,8 +46,9 @@ x-app:
   # in maintenance mode for the whole run (Steve, Q2). A failed step: postHook, then a normal
   # stop backup (fallback stop); updateApp's pre-update backup uses fail instead (idea#448).
   # Restore of a hook archive: MariaDB imports the dump (empty datadir), compose waits for the db
-  # healthcheck, before-starting/00-idea-restore.sh turns maintenance off and runs files:scan --all
-  # once. A stopped instance gets a cold backup (hooks skipped, data/db kept).
+  # healthcheck, before-starting/00-idea-restore.sh turns maintenance off and starts a detached
+  # files:scan --all that runs once Apache answers (outside the healthTimeout port-ready budget),
+  # once per dump. A stopped instance gets a cold backup (hooks skipped, data/db kept).
   backup:
     method: hook
     fallback: stop
