@@ -4,6 +4,23 @@ Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>
 Kits get a release only through Engine `updateApp` (idea#374). Every release so far keeps the
 same pinned images, so no image is rebuilt or republished.
 
+## 1.6-31.0.1
+
+- **Live backup** (idea#403, agent-engine-dev#404): `x-app.backup` method `hook`, fallback `stop`,
+  `hookTimeout` 600 s per step. preHook: maintenance mode on, then a MariaDB dump
+  (`--single-transaction`) into `data/backup/db`; postHook: maintenance off, dump removed.
+  `hookExclude: [data/db]`. See [backup.md](./backup.md).
+- **Restore of a hook archive**: `./data/backup/db` is MariaDB's initdb folder, so an empty datadir
+  imports the dump. New db healthcheck (`mariadb-admin ping` on TCP) and
+  `depends_on: service_healthy` on `nextcloud-app`. New `before-starting/00-idea-restore.sh`:
+  maintenance off and `files:scan --all`, once per dump.
+- **Images** unchanged since 1.2 (same digests).
+
+**Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder.
+The app now starts only once MariaDB answers on TCP (a few seconds on a normal start).
+
+**Tested:** box only so far; the on-Pi check (idea03) is still to do, so `engine_tested` stays 431ab4c.
+
 ## 1.5-31.0.1
 
 Since the last tag, `1.2-31.0.1` (0a6e764). 1.3 and 1.4 were version bumps on main and were never tagged.

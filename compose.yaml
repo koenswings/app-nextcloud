@@ -10,7 +10,7 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "1.5-31.0.1"
+  version: "1.6-31.0.1"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # Measured on idea04 (Pi 4, 2026-10-28, idea#351): 30.0.6 -> 31.0.1 first start 66-69 s to status.php maintenance:false, needsDbUpgrade:false (6 users, 1203 files, db 163 MB). About 4x margin: real instances add Office and more apps to upgrade.
@@ -39,6 +39,41 @@ x-app:
     service: nextcloud-app
     command: /hooks/usage.sh
     timeoutS: 30
+  # idea#403: live backup (agent-engine-dev#404, contract agent-app-dev docs/backup-hook.md).
+  # preHook, in order, stops at the first failure: maintenance mode on, then a MariaDB dump into
+  # data/backup/db (the db's initdb folder). borg then reads the instance without data/db
+  # (hookExclude). postHook always runs, every step: maintenance off, dump removed. Nextcloud is
+  # in maintenance mode for the whole run (Steve, Q2). A failed step: postHook, then a normal
+  # stop backup (fallback stop); updateApp's pre-update backup uses fail instead (idea#448).
+  # Restore of a hook archive: MariaDB imports the dump (empty datadir), compose waits for the db
+  # healthcheck, before-starting/00-idea-restore.sh turns maintenance off and runs files:scan --all
+  # once. A stopped instance gets a cold backup (hooks skipped, data/db kept).
+  backup:
+    method: hook
+    fallback: stop
+    hookTimeout: 600     # per step; a 163 MB database dumps in well under a minute on a Pi 4
+    preHook:
+      - service: nextcloud-app
+        user: "33"
+        command: [php, /var/www/html/occ, maintenance:mode, --on]
+      - service: nextcloud-db
+        command: [/idea/backup/db-dump.sh]
+    postHook:
+      - service: nextcloud-app
+        user: "33"
+        command: [php, /var/www/html/occ, maintenance:mode, --off]
+      - service: nextcloud-db
+        command: [/idea/backup/db-clean.sh]
+    hookExclude:
+      - data/db          # live InnoDB files: the dump in data/backup/db replaces them
+    # Paths true of a hook archive and of a fallback (stop) or cold archive (engine#401 adds per-mode checks).
+    verify:
+      present:
+        - .env
+        - data/nextcloud/config/config.php
+        - data/nextcloud/version.php
+        - hooks/backup-db-dump.sh
+      absent: []
 networks:
   backend: null
 services:
@@ -46,7 +81,7 @@ services:
     #image: nextcloud
     image: koenswings/nextcloud:1.0-31.0.1@sha256:3fcd398e8e9b0d46cc84ecebe70a95b4ad97ffd85f974419376d7ddd68a1823d
     labels:
-      x-app-version: "1.5-31.0.1"
+      x-app-version: "1.6-31.0.1"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -78,6 +113,13 @@ services:
       # Sets trusted_domains for the Pi it runs on, on every start (agent-engine-dev#163)
       - ./docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:/docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:ro
       - ./hooks/usage.sh:/hooks/usage.sh:ro
+      # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
+      - ./data/backup/db:/idea-backup-db:ro
+    # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import
+    # (MariaDB's temporary init server has no TCP) has finished before Nextcloud starts.
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
     ports:
       - ${port}:80
     environment:
@@ -128,13 +170,27 @@ services:
     #image: mariadb
     image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
-      x-app-version: "1.5-31.0.1"
+      x-app-version: "1.6-31.0.1"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
       --innodb-file-per-table=1 --skip-innodb-read-only-compressed
+    # idea#403: healthy = the real server answers on TCP 127.0.0.1. `mariadb-admin ping` exits 0
+    # also on "access denied", so no credentials are needed. The init server that imports a
+    # restored dump runs with skip-networking, so the db only turns healthy after the import.
+    # start_period 900 s covers a large import on a Pi.
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 900s
     volumes:
       - ./data/db:/var/lib/mysql
+      # idea#403: backup dump folder = MariaDB's initdb folder (imported only into an empty datadir).
+      - ./data/backup/db:/docker-entrypoint-initdb.d
+      - ./hooks/backup-db-dump.sh:/idea/backup/db-dump.sh:ro
+      - ./hooks/backup-db-clean.sh:/idea/backup/db-clean.sh:ro
     environment:
       - MYSQL_ROOT_PASSWORD=${pass}
       - MYSQL_PASSWORD=${pass}
@@ -146,7 +202,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "1.5-31.0.1"
+      x-app-version: "1.6-31.0.1"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
