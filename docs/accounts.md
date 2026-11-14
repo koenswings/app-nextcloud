@@ -27,3 +27,9 @@ them**; the common-password rule and everything else stay on. With that,
 `admin911!`, `teacher1911!`, `learner1911!` are accepted (verified on the real
 image). Automated: `tests/accounts-hook.test.mjs` (fake occ that enforces the
 NC 31 defaults).
+
+## Demo instance accounts
+
+The "Nextcloud Demo" (demo/README.md, engine#369) adds `teacher2`, `learner2` and
+`learner3` with the same `<account>911!` rule, the class group `grade5a` ("Grade 5A")
+for the three learners, and sample files and shares. It only seeds demo instances.
