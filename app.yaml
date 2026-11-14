@@ -3,11 +3,11 @@ idea_app_version: "1.0"
 
 compatibility:
   engine_min: "0.9.0"
-  # 1.5-31.0.1 (idea_usage counter + empty skeleton, idea#464): on-Pi checks on idea03 at c460aca, 1224f54 and 3fa97b1 (pre-install skeleton config), throwaway compose projects.
+  # 1.5-31.0.1 (idea_usage counter + empty skeleton, idea#464): 7-step on-Pi check on Engine 431ab4c (steps 1–6 idea04, step 7 idea03) at af5f289. Earlier checks on idea03 at c460aca, 1224f54 and 3fa97b1 (pre-install skeleton config), throwaway compose projects.
   engine_tested:
-    commit: "537b16d"
+    commit: "431ab4c"
     version: "1.0"
-    date: "2026-11-12"
+    date: "2026-11-14"
 
 services:
   - name: nextcloud-app
