@@ -30,4 +30,4 @@ no database upgrade. On the first start of 1.5 the before-starting hooks enable 
 (its migration creates the counter table) and put the empty-skeleton config file in place
 (the new `./config:/idea-config:ro` bind). Files and accounts are kept.
 
-**Tested:** `engine_tested` 537b16d, with on-Pi checks on idea03 (app-nextcloud#22, #23).
+**Tested:** `engine_tested` 431ab4c, 7-step on-Pi check (steps 1–6 on idea04, step 7 on idea03; app 1.5-31.0.1 at af5f289). Earlier checks on idea03 at c460aca, 1224f54 and 3fa97b1 (app-nextcloud#22, #23).

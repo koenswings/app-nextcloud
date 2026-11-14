@@ -30,7 +30,7 @@ it('image pins unchanged since 1.2 (digest-pinned, no rebuild)', () => {
 })
 
 it('app.yaml: engine_tested is set from the on-Pi check, idea_app_version unchanged', () => {
-  assert.match(appYaml, /engine_tested:\n    commit: "537b16d"\n    version: "1\.0"\n    date: "2026-11-12"/)
+  assert.match(appYaml, /engine_tested:\n    commit: "431ab4c"\n    version: "1\.0"\n    date: "2026-11-14"/)
   assert.match(appYaml, /^idea_app_version: "1\.0"$/m)
 })
 
