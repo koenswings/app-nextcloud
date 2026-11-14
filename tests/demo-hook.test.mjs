@@ -209,7 +209,9 @@ describe('hook.sh seed against a fake Nextcloud', () => {
       assert.deepEqual([...occ.users[u].groups].sort(), [...groups].sort())
     }
     assert.equal(occ.users.admin.pass, 'admin911!')
-    assert.equal(occ.users.teacher1.display, 'Teacher 1')
+    assert.equal(occ.users.teacher1.display, 'Teacher 1')   // set with user:setting (NC 31 has no user:modify)
+    assert.equal(occ.users.learner1.display, 'Learner 1')
+    assert.doesNotMatch(r.stderr, /could not set display name/)
     assert.deepEqual(s.usersCreated.sort(), ['learner2', 'learner3', 'teacher2'])
     // files
     const f = (k) => nc.st.files.get(k)?.toString()

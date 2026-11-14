@@ -32,7 +32,7 @@ switch (a[0]) {
     st.users[uid] = { display: opt('--display-name') ?? uid, pass: process.env.OC_PASS, groups: opts('--group') }; break
   }
   case 'user:resetpassword': st.users[a.at(-1)].pass = process.env.OC_PASS; break
-  case 'user:modify': if (a[2] === 'displayname') st.users[a[1]].display = a[3]; break
+  case 'user:setting': if (a[2] === 'settings' && a[3] === 'display_name' && a[4] !== undefined) st.users[a[1]].display = a[4]; break
   case 'group:adduser': {
     const [, g, u] = a
     if (!st.groups[g]) fail(`Group not found`)

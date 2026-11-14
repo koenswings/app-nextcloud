@@ -219,7 +219,8 @@ def seed_groups_users(occ: Occ, summary: dict, reset: bool) -> None:
                 occ.run("user:resetpassword", "--password-from-env", uid, secret=password(uid))
                 summary["passwordsReset"].append(uid)
             if users.get(uid) != display:
-                r = occ.run("user:modify", uid, "displayname", display, check=False)
+                # NC 31 has no user:modify; user:setting <uid> settings display_name sets it.
+                r = occ.run("user:setting", uid, "settings", "display_name", display, check=False)
                 if r.returncode != 0:
                     log(f"WARNING could not set display name of {uid} (kept {users.get(uid)!r})")
         for g in member_of:

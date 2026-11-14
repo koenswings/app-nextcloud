@@ -57,6 +57,7 @@ demo:
     sha256: "deabeacbde8bb2e31e564a9f300ecfad5d6195473a79a2f6c489cb6f9e03a745"
     bytes: 450560
     minVersion: 1
-  reserveBytes: 1000000000
+  # A fresh demo instance's data/ was 1.1 GB on idea04 (Nextcloud 31 + Office apps + the pack).
+  reserveBytes: 1500000000
   steps:
     - { id: seed, run: demo/hook.sh seed, needs: running, timeoutSec: 1200 }
