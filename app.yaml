@@ -42,3 +42,22 @@ services:
       - kind: dockerhub
         repo: collabora/code
         tag_pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+
+# Demo apps (agent-engine-dev#369, Console "Demo apps" / setupDemo). The Engine downloads the
+# pinned pack (or takes IDEA-DEMO/idea-demo-nextcloud-vN.tar or IDEA-DEMO/nextcloud/pack.json
+# from a docked disk or USB stick), checks the sha256, extracts it to <instance>/demo-pack/x,
+# starts the "Nextcloud Demo" instance and runs demo/hook.sh seed. Rebuild the pack with
+# demo/build-demo-pack.py and re-pin sha256 and bytes here. See demo/README.md.
+demo:
+  name: "Nextcloud Demo"
+  minEngine: "1.0"
+  pack:
+    file: idea-demo-nextcloud-v1.tar
+    url: https://github.com/koenswings/app-nextcloud/releases/download/idea-demo-nextcloud-v1/idea-demo-nextcloud-v1.tar
+    sha256: "deabeacbde8bb2e31e564a9f300ecfad5d6195473a79a2f6c489cb6f9e03a745"
+    bytes: 450560
+    minVersion: 1
+  # A fresh demo instance's data/ was 1.1 GB on idea04 (Nextcloud 31 + Office apps + the pack).
+  reserveBytes: 1500000000
+  steps:
+    - { id: seed, run: demo/hook.sh seed, needs: running, timeoutSec: 1200 }

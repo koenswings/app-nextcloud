@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "packVersion": 1,
+  "app": "nextcloud",
+  "minAppVersion": "1.5-31.0.1",
+  "bytes": 429374,
+  "credits": "CREDITS.txt",
+  "hooks": [
+    {
+      "id": "seed",
+      "needs": "running"
+    }
+  ],
+  "files": [
+    {
+      "path": "CREDITS.txt",
+      "sha256": "cc50ba91083a4a71786f1148be52c9c0ccf582b83d33df436bfdae9450aa1a5d",
+      "bytes": 7918
+    },
+    {
+      "path": "Class/Welcome to Grade 5A.md",
+      "sha256": "eba2a5b0a28751aa5b8480c852b5b39e4bcabce4353c9e9f3ed1b03947db4544",
+      "bytes": 711
+    },
+    {
+      "path": "Learner Files/My reading log.md",
+      "sha256": "4c9595500d70132800f3e3cf4062d5cdf5f2c745bed81e8fa26f776693b248b6",
+      "bytes": 513
+    },
+    {
+      "path": "Teacher Notes/About this demo.md",
+      "sha256": "e46caee577a92a28b55dad95eeb95b3b74c7bfdc0411c0c8c3ef5a9f436c88ba",
+      "bytes": 1717
+    },
+    {
+      "path": "Teacher Notes/Fractions lesson plan.md",
+      "sha256": "528bfeffa43d62b2fb0b37f27dd3a39e4adb7b532403737ddd964bfa10812930",
+      "bytes": 1169
+    },
+    {
+      "path": "Teacher Notes/Sharing files with your class.md",
+      "sha256": "67f3341aac38e86285fc09a01635154b73515ae9e623bc9581303a32094259e0",
+      "bytes": 789
+    },
+    {
+      "path": "Worksheets/Blank fraction circles.png",
+      "sha256": "85a9f8b55bc05c54f253e9ceece9dc668b81671c7519e53141f684b5a583d1b5",
+      "bytes": 55048
+    },
+    {
+      "path": "Worksheets/Fractions practice.md",
+      "sha256": "7501584c1be473311071e168510cccb8cb7cce1e600b68aed83f28ada39a47c5",
+      "bytes": 821
+    },
+    {
+      "path": "Worksheets/How Tortoise got a crooked nose - colour-in.pdf",
+      "sha256": "fc61e68dbde6f278f588f42dad3f3cf42ed413d79fcae027dbb3438c6c09c571",
+      "bytes": 359943
+    },
+    {
+      "path": "Worksheets/Tortoise story questions.md",
+      "sha256": "3eff40f8f287807fc01c237c411866ce0ce0d28bb30824ba43cf240058c972db",
+      "bytes": 745
+    }
+  ]
+}

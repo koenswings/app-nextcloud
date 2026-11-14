@@ -1,0 +1,74 @@
+IDEA-DEMO pack for Nextcloud — credits
+Date: 14 November 2026 (Europe/Brussels)
+This pack is offered for education.
+
+Pack: idea-demo-nextcloud-v1.tar (packVersion 1), built from koenswings/app-nextcloud
+demo/content/ by demo/build-demo-pack.py.
+Licences and authors below were checked against the work itself (PDF credits page)
+or the publisher (Wikimedia Commons imageinfo API, file sha1 identical to the Commons
+original). Nothing here is guessed. Items whose licence could not be confirmed are
+not in this pack.
+IDEA's own demo content is licensed Creative Commons Attribution 4.0 International
+(CC BY 4.0), © IDEA (Initiative for Digital Education in Africa), by Koen's decision
+of 14 November 2026, 11:07 CET (via Steve): "Use CC BY 4.0 for IDEA's own demo content."
+
+Format of the catalogue lines (engine-dev#369 pack v1):
+  path | title | author | source URL | licence
+The path is the file's path inside this pack. Every file in the pack except
+pack.json and this file has exactly one catalogue line.
+
+Nextcloud packaging notes
+- The demo hook (demo/hook.sh) uploads these files into the Nextcloud Demo:
+  Class/ and Worksheets/ go to teacher1's "Grade 5A" folder (Worksheets/ as a
+  subfolder), shared with the Grade 5A class group; Teacher Notes/ goes to
+  teacher1's "Teacher Notes" folder, shared with the teachers group; Learner
+  Files/ goes to each learner's "My work" folder.
+- Third-party files are included unchanged. The African Storybook PDF is renamed
+  only (the original file name has brackets, which pack paths do not allow);
+  its content is byte-for-byte the publisher's file.
+
+Catalogue
+
+Class/Welcome to Grade 5A.md | Welcome to Grade 5A | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Class | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Learner Files/My reading log.md | My reading log | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Learner%20Files | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Teacher Notes/About this demo.md | About this demo | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Teacher%20Notes | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Teacher Notes/Fractions lesson plan.md | Lesson plan: halves and quarters | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Teacher%20Notes | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Teacher Notes/Sharing files with your class.md | Sharing files with your class | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Teacher%20Notes | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Worksheets/Blank fraction circles.png | FractionCircles Blank | Zapotz | https://commons.wikimedia.org/wiki/File:FractionCircles_Blank.PNG | Creative Commons CC0 1.0 Universal Public Domain Dedication (CC0 1.0); https://creativecommons.org/publicdomain/zero/1.0/
+Worksheets/Fractions practice.md | Fractions practice | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Worksheets | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Worksheets/How Tortoise got a crooked nose - colour-in.pdf | How Tortoise got a crooked nose (Colour-in) | Taiwo Ẹhinẹni; adaptation by African Storybook and Judith Baker; illustrated by Marlene Visser; © African Storybook Initiative 2015 | https://www.africanstorybook.org/read/downloadbook.php?layout=landscape&id=19763 | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/; unchanged (renamed only)
+Worksheets/Tortoise story questions.md | Tortoise story questions | © IDEA (Initiative for Digital Education in Africa) | https://github.com/koenswings/app-nextcloud/tree/main/demo/content/Worksheets | Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+
+Standard attribution sentences
+- Creative Commons CC0 1.0 Universal Public Domain Dedication (CC0 1.0) — https://creativecommons.org/publicdomain/zero/1.0/
+  The author has dedicated this work to the public domain under the Creative Commons CC0 1.0 Universal Public Domain Dedication. To the extent possible under law, the author has waived all copyright and related or neighboring rights. https://creativecommons.org/publicdomain/zero/1.0/
+- Creative Commons Attribution 4.0 International (CC BY 4.0) — https://creativecommons.org/licenses/by/4.0/
+  This work is licensed under the Creative Commons Attribution 4.0 International License. To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/
+
+Per-work details
+
+Title: FractionCircles Blank
+Pack path: Worksheets/Blank fraction circles.png
+Author / rights holder: Zapotz
+Source URL: https://commons.wikimedia.org/wiki/File:FractionCircles_Blank.PNG
+Licence: Creative Commons CC0 1.0 Universal Public Domain Dedication (CC0 1.0)
+Licence URL: https://creativecommons.org/publicdomain/zero/1.0/
+Attribution: The author has dedicated this work to the public domain under the Creative Commons CC0 1.0 Universal Public Domain Dedication. To the extent possible under law, the author has waived all copyright and related or neighboring rights. https://creativecommons.org/publicdomain/zero/1.0/
+Note: 55048 bytes, sha1 fc924ed9cd7261b2038c2e94cc8ae62c43572d3f, identical to the Commons original (imageinfo API, 14 November 2026).
+
+Title: How Tortoise got a crooked nose (Colour-in)
+Pack path: Worksheets/How Tortoise got a crooked nose - colour-in.pdf
+Author / rights holder: Taiwo Ẹhinẹni; adaptation by African Storybook and Judith Baker; illustrated by Marlene Visser; © African Storybook Initiative 2015
+Source URL: https://www.africanstorybook.org/read/downloadbook.php?layout=landscape&id=19763
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+Licence URL: https://creativecommons.org/licenses/by/4.0/
+Attribution: This work is licensed under the Creative Commons Attribution 4.0 International License. To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/
+Note: Source www.africanstorybook.org, as stated on the PDF credits page. Unchanged; renamed from "How Tortoise got a crooked nose (colour-in).pdf".
+
+Title: Welcome to Grade 5A; Fractions practice; Tortoise story questions; My reading log; About this demo; Lesson plan: halves and quarters; Sharing files with your class
+Pack paths: Class/Welcome to Grade 5A.md, Worksheets/Fractions practice.md, Worksheets/Tortoise story questions.md, Learner Files/My reading log.md, Teacher Notes/About this demo.md, Teacher Notes/Fractions lesson plan.md, Teacher Notes/Sharing files with your class.md
+Author / rights holder: © IDEA (Initiative for Digital Education in Africa)
+Source URL: https://github.com/koenswings/app-nextcloud/tree/main/demo/content
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0); https://creativecommons.org/licenses/by/4.0/
+Attribution: This work is licensed under the Creative Commons Attribution 4.0 International License. To view a copy of this license, visit https://creativecommons.org/licenses/by/4.0/
+Note: Original IDEA demo texts written for this pack (engine#369 / idea#235). Licence and copyright per Koen's decision (via Steve, 14 November 2026, 11:07 CET): "Use CC BY 4.0 for IDEA's own demo content."

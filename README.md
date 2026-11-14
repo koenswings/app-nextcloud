@@ -16,4 +16,4 @@ A `before-starting` hook sets `trusted_domains` for the Pi the instance runs on,
 
 ## Demo instance
 
-See [demo/README.md](demo/README.md): `demo/install-demo.sh` installs and seeds a separate "Nextcloud Demo" instance.
+See [demo/README.md](demo/README.md): the Console "Demo apps" button (Engine `setupDemo`, engine#369) uses the `demo:` block in `app.yaml`, the demo pack (`demo/build-demo-pack.py`) and `demo/hook.sh seed`; `demo/install-demo.sh` installs and seeds a separate "Nextcloud Demo" instance by hand.
