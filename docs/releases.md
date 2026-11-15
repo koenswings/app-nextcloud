@@ -1,8 +1,38 @@
 # Releases
 
 Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>-<Nextcloud version>`).
-Kits get a release only through Engine `updateApp` (idea#374). Every release so far keeps the
-same pinned images, so no image is rebuilt or republished.
+Kits get a release only through Engine `updateApp` (idea#374). Until the 1.8 Nextcloud image
+is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
+index; MariaDB and CODE stay on the same pins as 1.2.
+
+## 1.8-31.0.14
+
+- **Nextcloud point update:** official `library/nextcloud` `31.0.1-apache` → `31.0.14-apache`
+  (latest 31.0.x patch as of 2026-11-15; floating `31-apache` and `31.0-apache` point at the
+  same index). App minor 1.7 → 1.8, same App major, same Nextcloud major 31. Bundle name
+  `nextcloud-1.8-31.0.14`.
+- **Images:** `nextcloud-app` is pinned to the upstream multi-platform index
+  `nextcloud:31.0.14-apache@sha256:07ec73cc816e58d6f45a162cd53ef886462c29271a23fc68d0124cec276e3767`
+  (`linux/arm64` variant v8 is in the index, platform manifest
+  `sha256:cfd9217bf40573a3cef513e32be7ac2517b3f57dc597eddbe4d2e81b0271c526`). The usual IDEA
+  retag `koenswings/nextcloud:1.8-31.0.14` is not published yet (needs Koen YES).
+  check-compose and the Engine pin check (`saveName()`, idea#322) require
+  `repo:tag@sha256:<64 hex>` — a digest-only pin and an unpublished placeholder are both
+  refused — so the compose uses the published official tag+index digest until the retag
+  exists and the pin is swapped. MariaDB
+  (`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404`) and CODE
+  (`koenswings/nextcloud-code:1.0-24.04.13.2`) are unchanged since 1.2.
+- **bundled apps:** `richdocuments` stays 8.8.3 (`info.xml` min-version 31, max-version 31,
+  covers 31.0.14). `idea_usage` 1.0.0 stays (`info.xml` range 31). Tarball checksums in
+  `bundled-apps/SHA256SUMS` are unchanged.
+
+**Migration:** Nextcloud's own database upgrade on the first start of 1.8 (31.0.1 → 31.0.14).
+Files and accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
+No App-level migration. MariaDB and CODE are unchanged.
+
+**Tested:** Pi proof pending (needs a free pool Pi: updateApp 1.7→1.8, health, login per role,
+Office open, backup/restore). `engine_tested` is left at the 1.7 value (cba91a6) until that
+proof.
 
 ## 1.7-31.0.1
 
