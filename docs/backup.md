@@ -44,7 +44,9 @@ entrypoint imports `*.sql` from there **only when the datadir is empty**, so on 
 
 1. **Hook archive** (no `data/db`, dump in `data/backup/db`): MariaDB initializes an empty datadir
    (same `.env`, so same passwords) and imports the dump with its temporary server. That server
-   has no TCP, so the db healthcheck (`mariadb-admin ping -h 127.0.0.1`) only turns healthy after
+   has skip-networking, so the db healthcheck (the image's `healthcheck.sh --connect
+   --innodb_initialized`, as its healthcheck user from `data/db/.my-healthcheck.cnf`; no password
+   in compose, no access-denied log lines) only turns healthy after
    the import. `nextcloud-app` has `depends_on: nextcloud-db: service_healthy`, so Nextcloud
    starts after the import (`start_period` 900 s covers a large import).
 2. `before-starting/00-idea-restore.sh` (first hook, as www-data) sees a dump id without a done

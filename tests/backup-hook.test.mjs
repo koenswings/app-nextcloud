@@ -49,7 +49,9 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
   assert.match(compose, /- \.\/hooks\/backup-db-dump\.sh:\/idea\/backup\/db-dump\.sh:ro/)
   assert.match(compose, /- \.\/hooks\/backup-db-clean\.sh:\/idea\/backup\/db-clean\.sh:ro/)
   assert.match(compose, /- \.\/data\/backup\/db:\/idea-backup-db:ro/)
-  assert.match(compose, /test: \["CMD", "mariadb-admin", "ping", "-h", "127\.0\.0\.1", "--silent"\]/)
+  assert.match(compose, /test: \["CMD", "healthcheck\.sh", "--connect", "--innodb_initialized"\]/)
+  assert.match(compose, /- MARIADB_AUTO_UPGRADE=1\n/, 'healthcheck user on existing data dirs')
+  assert.doesNotMatch(compose, /mariadb-admin|healthcheck.*PASS|--password/, 'no credential-less ping, no password in compose')
   assert.match(compose, /depends_on:\n      nextcloud-db:\n        condition: service_healthy/)
   assert.doesNotMatch(compose, /^\s+restart: (?!no)/m, 'restart: no stays on every service')
 })
@@ -146,3 +148,4 @@ it('restore hook: worker gives up after IDEA_RESTORE_WAIT without a scan or mark
   assert.match(readFileSync(join(data, '.idea-restore-scan.log'), 'utf8'), /gave up after 1s/)
   assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')).calls, [['maintenance:mode', '--off']])
 })
+

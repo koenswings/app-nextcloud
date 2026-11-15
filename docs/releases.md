@@ -11,12 +11,15 @@ same pinned images, so no image is rebuilt or republished.
   (`--single-transaction`) into `data/backup/db`; postHook: maintenance off, dump removed.
   `hookExclude: [data/db]`. See [backup.md](./backup.md).
 - **Restore of a hook archive**: `./data/backup/db` is MariaDB's initdb folder, so an empty datadir
-  imports the dump. New db healthcheck (`mariadb-admin ping` on TCP) and
+  imports the dump. New db healthcheck (the image's `healthcheck.sh --connect --innodb_initialized`) with
+  `MARIADB_AUTO_UPGRADE=1`, which creates the healthcheck user on an existing data dir, and
   `depends_on: service_healthy` on `nextcloud-app`. New `before-starting/00-idea-restore.sh`:
   maintenance off before Apache, then a detached `files:scan --all` once Apache answers, once per dump.
 - **Images** unchanged since 1.2 (same digests).
 
-**Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder.
+**Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder,
+and the MariaDB entrypoint (`MARIADB_AUTO_UPGRADE=1`) creates the `healthcheck` user and
+`data/db/.my-healthcheck.cnf` when they are missing (a few seconds, temporary server).
 The app now starts only once MariaDB answers on TCP (a few seconds on a normal start).
 
 **Tested:** box only so far; the on-Pi check (idea03) is still to do, so `engine_tested` stays 431ab4c.
