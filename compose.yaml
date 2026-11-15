@@ -106,7 +106,7 @@ services:
     # Image CMD is dropped when entrypoint is overridden — restore it.
     command: ["apache2-foreground"]
     # Docker health (app-nextcloud#29): /idea/app-healthcheck.sh. Alive on a ready status.php,
-    # or on HTTP 503 with "maintenance":true only while data/nextcloud/data/.idea-backup-pending
+    # or on HTTP 200/503 with "maintenance":true only while data/nextcloud/data/.idea-backup-pending
     # exists with age in [-300 s, 7200 s] (IDEA_BACKUP_MARKER_MAX_FUTURE_S /
     # IDEA_BACKUP_MARKER_MAX_AGE_S). A stuck or manual maintenance (no marker, a leftover
     # older than 2 h, or a mtime more than 5 min in the future) still goes unhealthy.

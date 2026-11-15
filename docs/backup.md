@@ -29,8 +29,9 @@ stop/start backup with `data/db`, result `HOOK_FALLBACK`). updateApp's pre-updat
 
 ## Healthcheck during the backup window (app-nextcloud#29)
 
-`status.php` returns HTTP 503 with `"maintenance":true` while maintenance is on, so the old
-`curl -f` healthcheck failed for the whole window. With interval 15 s and 3 retries, a dump+borg
+`status.php` reports `"maintenance":true` while maintenance is on (Nextcloud 31.0.1 answers HTTP
+200, seen on idea03 2026-11-15; other versions answer 503), so the old ready-only
+healthcheck failed for the whole window. With interval 15 s and 3 retries, a dump+borg
 run longer than about 45 s (a large database or a slow Backup Disk) would mark `nextcloud-app`
 unhealthy mid-backup.
 
@@ -38,7 +39,7 @@ The Docker healthcheck (`hooks/app-healthcheck.sh`, mounted at `/idea/app-health
 treats that window as alive, but only while the backup marker exists:
 
 - HTTP 200 and a body containing `"maintenance":false,"needsDbUpgrade":false`: healthy (ready).
-- HTTP 503, a body containing `"maintenance":true`, and `data/nextcloud/data/.idea-backup-pending`
+- HTTP 200 or 503, a body containing `"maintenance":true`, and `data/nextcloud/data/.idea-backup-pending`
   (`/var/www/html/data/.idea-backup-pending` in the app container) whose age
   (`now - mtime`) is in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,
   `IDEA_BACKUP_MARKER_MAX_AGE_S` default 7200): healthy (backup in progress).

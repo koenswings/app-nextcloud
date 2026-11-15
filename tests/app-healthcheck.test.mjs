@@ -65,6 +65,26 @@ it('maintenance with a fresh backup marker: HTTP 503 with maintenance true is al
   assert.equal(r.stdout, '')
 })
 
+it('Nextcloud 31: HTTP 200 with maintenance true and a fresh marker is alive (idea03 2026-11-15)', () => {
+  writeFileSync(marker, '')
+  const r = run({ IDEA_HC_CODE: '200', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.stdout, '')
+})
+
+it('Nextcloud 31: HTTP 200 with maintenance true and no marker, a stale marker, or a far-future marker is unhealthy', () => {
+  let r = run({ IDEA_HC_CODE: '200', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, 'no marker: ' + r.stdout + r.stderr)
+  writeFileSync(marker, '')
+  const now = Date.now() / 1000
+  utimesSync(marker, now - 3 * 3600, now - 3 * 3600)
+  r = run({ IDEA_HC_CODE: '200', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, '3 h old: ' + r.stdout + r.stderr)
+  utimesSync(marker, now + 3600, now + 3600)
+  r = run({ IDEA_HC_CODE: '200', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, '+1 h future: ' + r.stdout + r.stderr)
+})
+
 it('maintenance with a marker older than 2 h is unhealthy', () => {
   writeFileSync(marker, '')
   const past = Date.now() / 1000 - 3 * 3600

@@ -4,13 +4,16 @@
 # Alive when:
 #   - status.php returns HTTP 200 and the body contains
 #     "maintenance":false,"needsDbUpgrade":false  (normal ready state), or
-#   - status.php returns HTTP 503, the body contains "maintenance":true, and
+#   - status.php returns HTTP 200 or 503, the body contains "maintenance":true, and
 #     the IDEA backup marker exists with age in
 #     [-IDEA_BACKUP_MARKER_MAX_FUTURE_S, IDEA_BACKUP_MARKER_MAX_AGE_S]
 #     (defaults 300 s and 7200 s). The marker is
 #     /var/www/html/data/.idea-backup-pending (host: data/nextcloud/data/),
 #     written by the backup preHook (touch, user 33) and removed by postHook
 #     and by before-starting/00-idea-restore.sh on every start.
+#     Nextcloud 31's status.php answers HTTP 200 with "maintenance":true during
+#     occ maintenance:mode --on (seen on idea03, 2026-11-15); older docs say
+#     503, so both codes are accepted.
 #     A stuck maintenance window whose marker was left behind goes unhealthy
 #     once the marker is older than MAX_AGE_S, more than MAX_FUTURE_S in the
 #     future, or has been cleared on start.
@@ -58,7 +61,7 @@ code=$(curl -sS -m 4 -o "$tmp" -w '%{http_code}' "$URL") || exit 1
 if [ "$code" = 200 ] && grep -q '"maintenance":false,"needsDbUpgrade":false' "$tmp"; then
 	exit 0
 fi
-if [ "$code" = 503 ] && grep -q '"maintenance":true' "$tmp" && marker_is_fresh "$MARKER"; then
+if { [ "$code" = 200 ] || [ "$code" = 503 ]; } && grep -q '"maintenance":true' "$tmp" && marker_is_fresh "$MARKER"; then
 	exit 0
 fi
 exit 1
