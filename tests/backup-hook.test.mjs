@@ -100,7 +100,7 @@ it('dump: missing password or dump folder fails closed', () => {
   assert.equal(run(DUMP, { IDEA_BACKUP_DB_DIR: join(dir, 'nope') }).status, 1)
 })
 
-it('clean: removes only the dump files, idempotent', () => {
+it('clean: removes only the dump, its id and the import markers, idempotent', () => {
   assert.equal(run(DUMP).status, 0)
   writeFileSync(join(out, 'keep.txt'), 'x')
   assert.equal(run(CLEAN).status, 0)

@@ -8,7 +8,7 @@ same pinned images, so no image is rebuilt or republished.
 
 - **Live backup** (idea#403, agent-engine-dev#404): `x-app.backup` method `hook`, fallback `stop`,
   `hookTimeout` 600 s per step. preHook: maintenance mode on, then a MariaDB dump
-  (`--single-transaction`) into `data/backup/db`; postHook: maintenance off, dump removed.
+  (`--single-transaction`) into `data/backup/db`; postHook: maintenance off, dump, id and import markers removed.
   `hookExclude: [data/db]`. See [backup.md](./backup.md).
 - **Restore of a hook archive**: `./data/backup/db` is MariaDB's initdb folder, so an empty datadir
   imports the dump. New db healthcheck (the image's `healthcheck.sh --connect --innodb_initialized`) with

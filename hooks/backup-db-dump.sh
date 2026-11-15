@@ -17,7 +17,7 @@
 # handed to mariadb-dump through MYSQL_PWD; it is never printed or put on argv.
 #
 # Exit 0 = dump written and complete. Any other exit = the Engine treats the
-# preHook as failed: postHook runs (maintenance off, dump removed), then the
+# preHook as failed: postHook runs (maintenance off, dump, id and markers removed), then the
 # fallback (stop) or fail. A partial dump is never left as nextcloud.sql.
 set -eu
 

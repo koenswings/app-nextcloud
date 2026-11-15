@@ -15,7 +15,7 @@ from the instance folder: no shell and no extra env. `hookTimeout` (600 s) appli
 | preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
 | *borg* | — | instance folder minus `data/db` (`hookExclude`) | |
 | postHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --off` | Idempotent |
-| postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the three dump files; idempotent |
+| postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the dump (`nextcloud.sql`), its id (`nextcloud.sql.id`) and the two import markers (`00-idea-import-begin.sh`, `zz-idea-import-end.sh`), plus their temp files; idempotent |
 
 Pre steps stop at the first failure. Every post step always runs: after a failed pre step, after a
 failed earlier post step and after a failed borg run. So maintenance mode is switched off even when
@@ -30,8 +30,8 @@ stop/start backup with `data/db`, result `HOOK_FALLBACK`). updateApp's pre-updat
 `hooks/backup-db-dump.sh` runs as root in the MariaDB container. The root password comes from the
 container env (`MYSQL_ROOT_PASSWORD`, the instance `pass`) and is passed only through `MYSQL_PWD`;
 it is never on argv or printed. The dump is written to a temp file and renamed only when it ends
-with `-- Dump completed` and has the `oc_filecache` table. An older dump is removed first, so a
-failed run never leaves a dump behind. Options: `--single-transaction --quick --routines --triggers
+with `-- Dump completed` and has the `oc_filecache` table. An older dump, its id and its markers are removed
+first, so a failed run never leaves a dump behind. Options: `--single-transaction --quick --routines --triggers
 --hex-blob --default-character-set=utf8mb4`, database only (no `CREATE DATABASE`).
 
 `./data/backup/db` is bound as MariaDB's `/docker-entrypoint-initdb.d`. The official MariaDB
