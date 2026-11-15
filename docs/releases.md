@@ -30,16 +30,27 @@ image publish, no Pi proof.
   (version bump to 1.0.1 is deferred to the release decision). 8.8.3 is not shipped: a
   fresh 32 install would otherwise extract the 31-only tarball first.
 - **Prepare hook:** `x-app.update.prepare` runs `hooks/prep-custom-apps-for-upgrade.sh`
-  as a one-off `docker compose run --rm --no-deps --no-TTY --entrypoint … nextcloud-app`
-  after Swap and before Start (Axle contract). It verifies SHA256SUMS, moves each
-  existing `custom_apps/<app>` into a new timestamped folder under
-  `data/nextcloud/custom_apps/.idea-upgrade-backup/` (`mv`, never `rm -rf`, never
-  overwrites a backup), extracts the new tarballs, and is a no-op once `info.xml`
-  already shows the target version and max-version. It does not invoke occ.
-- **Settle check:** `x-app.update.settle` runs `hooks/settle-update.sh` after Health
-  (`docker compose exec`; exit 0 settled, 3 not yet, other error). Read-only:
-  `status.php` installed/maintenance/needsDbUpgrade, plus `occ app:list` showing
-  richdocuments 9.2.3 and idea_usage 1.0.0 enabled. It does not run `cron.php`.
+  after Swap and before Start as a one-off (Axle addendum). The Engine uses a generated
+  override (`entrypoint: [command]`, empty command, no leftover argv):
+  `docker compose run --rm --no-deps --no-TTY --user 0 nextcloud-app`. `user: "0"` is
+  declared (gaps 10 and 13 accepted). The script is idempotent as a defensive rule
+  (SHA256SUMS, mv backups, no occ; an interrupted prepare always restores the snapshot)
+  and reads target versions from the tarballs.
+- **Verify hook:** `x-app.update.verify` runs `hooks/verify-update.sh` once after Health
+  (`docker compose exec -T -u 33`; timeout 120). Exit 0 passes; any other exit is
+  `VERIFY_FAILED` and rolls back. Checks `status.php` (installed, maintenance false,
+  needsDbUpgrade false) and `occ app:list` showing richdocuments 9.2.3 enabled and
+  idea_usage 1.0.0 enabled. Versions come from the bundled tarball / `hooks/update-targets`
+  (keyed by `IDEA_APP_VERSION`, which matches `x-app.version`).
+- **Work hook:** `x-app.update.work` runs `hooks/work-update.sh` once after verify
+  (`docker compose exec -T -u 33`; timeout 3600). It runs `cron.php` up to three times
+  (Nextcloud: run it 2-3 times after a major). A non-zero exit or timeout stops the path
+  with `migrationsPending` and does not roll back.
+- **Settle check:** `x-app.update.settle` runs `hooks/settle-update.sh` after work
+  (`docker compose exec -T -u 33`; exit 0 settled, 3 not yet, other error; interval 60,
+  timeout 3600). `user: "33"` is declared (no in-script root→www-data fallback).
+  Read-only: `status.php` plus a pending-upgrade-job probe. It does not run `cron.php`
+  and does not re-check app versions (that is verify's job, because it rolls back).
 - **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
   Re-measure on a pool Pi before locking the release.
 

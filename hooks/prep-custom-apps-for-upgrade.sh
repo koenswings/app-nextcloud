@@ -1,22 +1,37 @@
 #!/bin/sh
-# hooks/prep-custom-apps-for-upgrade.sh — x-app.update.prepare (App 2.0, Nextcloud 32).
+# hooks/prep-custom-apps-for-upgrade.sh — x-app.update.prepare (App 2.0 / 3.0 / 4.0).
 #
-# Engine contract (Axle): after Swap, before Start, as a one-off, not as root on the host:
-#   docker compose run --rm --no-deps --no-TTY \
-#     --entrypoint /idea/hooks/prep-custom-apps-for-upgrade.sh nextcloud-app
-# That overrides this service's /idea-files-entrypoint.sh, so the image entrypoint
-# (and occ upgrade) never runs. --no-deps keeps MariaDB stopped. The script sees the
-# same bind mounts as nextcloud-app (./data/nextcloud, ./bundled-apps).
+# Engine contract (Axle addendum, 2026-11-15): after Swap, before Start, as a
+# one-off, not as root on the host. The Engine uses a generated override that
+# sets entrypoint: [command] and an empty command (gap 2 accepted), so argv is
+# exactly this script. --no-deps, no ports, no image pull:
+#   docker compose run --rm --no-deps --no-TTY --user 0 nextcloud-app
+# That override replaces this service's /idea-files-entrypoint.sh, so the image
+# entrypoint (and occ upgrade) never runs. --no-deps keeps MariaDB stopped.
+# The script sees the swapped compose's volumes and env (./data/nextcloud,
+# ./bundled-apps), plus any Engine-injected mounts (unused, harmless).
+#
+# user: "0" is declared on the step (gaps 10 and 13 accepted) so chown 33 can
+# run. The Engine passes it verbatim as run --user and never defaults a step
+# to 33. If this ever ran as non-root, chown is skipped and extract still
+# works when custom_apps is writable by uid 33. That is not a user-field
+# fallback; the field itself is guaranteed.
+#
+# Resume (gap 6 changed): an interrupted or failed prepare always restores
+# the snapshot, and Resume starts the hop again from Swap on the old tree.
+# Idempotence is a defensive App rule only (a second run on an already
+# staged tree is a no-op once info.xml matches the tarball).
 #
 # For each bundled tarball: verify sha256 against bundled-apps/SHA256SUMS, then if
 # custom_apps/<app> is not already the tarball's version + nextcloud max-version,
 # mv the existing folder into a new timestamped subfolder of
 # custom_apps/.idea-upgrade-backup/ (never rm -rf, never overwrite a backup) and
-# extract the new tree. A second run is a no-op once the target info.xml is in place.
-# Fail closed: non-zero exit and a clear ERROR line on any mismatch.
+# extract the new tree. Fail closed: non-zero exit and a clear ERROR line on any
+# mismatch. Target versions are read from each tarball, so the same script
+# serves 2.0, 3.0 and 4.0.
 #
-# Does not invoke occ. Extra argv (the compose command apache2-foreground, if the
-# Engine does not override it) is ignored.
+# Does not invoke occ. Unexpected argv is an error (do not ignore
+# apache2-foreground).
 #
 # Env:
 #   IDEA_BUNDLED_APPS          default /idea-bundled-apps
@@ -28,6 +43,11 @@ set -eu
 
 log() { echo "idea-prep-custom-apps: $*"; }
 die() { log "ERROR: $*"; exit 1; }
+
+# Gap 2 accepted: Engine must pass an empty command. Do not ignore leftover argv.
+if [ "$#" -ne 0 ]; then
+	die "unexpected arguments: $* (Engine must pass an empty command)"
+fi
 
 SRC="${IDEA_BUNDLED_APPS:-/idea-bundled-apps}"
 DST="${IDEA_CUSTOM_APPS:-/var/www/html/custom_apps}"

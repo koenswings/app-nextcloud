@@ -1,0 +1,7 @@
+# Per-release expected app versions for x-app.update verify (and as a fallback
+# when bundled tarballs are not visible). Columns: app_version, richdocuments,
+# idea_usage. Verify prefers the tarball <version>, then this table keyed by
+# IDEA_APP_VERSION (compose must match x-app.version).
+2.0-32.0.15	9.2.3	1.0.0
+3.0-33.0.11	10.3.3	1.0.0
+4.0-34.0.6	11.1.3	1.0.0

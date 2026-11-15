@@ -1,80 +1,63 @@
 #!/bin/sh
-# hooks/settle-update.sh — x-app.update.settle (App 2.0, Nextcloud 32).
+# hooks/settle-update.sh — x-app.update.settle (App 2.0 / 3.0 / 4.0).
 #
-# Engine contract (Axle): after Health passes, via docker compose exec on the
-# running nextcloud-app. Exit 0 = settled, 3 = not yet (poll again), any other
-# exit is an error. A settle error or timeout is not a rollback.
+# Engine contract (Axle addendum, 2026-11-15): after work, via
+#   docker compose exec -T -u 33 /idea/hooks/settle-update.sh
+# on the running nextcloud-app, polled every `interval` until `timeout`.
+# Exit 0 = settled, 3 = not yet (poll again), any other exit is an error.
+# A settle error or timeout is not a rollback; the path stops with
+# migrationsPending (Engine stopReason). This script is a read-only probe
+# and does not run cron.php (work does that).
 #
-# Read-only: status.php (installed true, maintenance false, needsDbUpgrade false)
-# plus occ app:list (richdocuments 9.2.3 and idea_usage 1.0.0 enabled). Does not
-# run cron.php or any occ write (see /workspace/kid-nc35/contract-gaps.md).
+# user: "33" is declared on the step (gaps 10 and 13 accepted). No in-script
+# root→www-data fallback.
 #
-# If this script is exec'd as root, occ is run as www-data (uid 33).
+# Read-only checks:
+#   status.php: installed true (ERROR if not), maintenance false and
+#   needsDbUpgrade false ("not yet" if not). Then a read-only upgrade-job
+#   probe. Pending jobs → "not yet". Probe unavailable → rely on status.php
+#   (the work step already ran the documented cron.php series).
+# App version / enabled checks live in verify (they roll back), not here.
 #
-# Env:
-#   IDEA_NC_HEALTH_URL                   default http://127.0.0.1/status.php
-#   OCC                                  test double for occ (optional)
-#   IDEA_SETTLE_RICHDOCUMENTS_VERSION    default 9.2.3
-#   IDEA_SETTLE_IDEA_USAGE_VERSION       default 1.0.0
+# Env: IDEA_NC_HEALTH_URL, OCC, IDEA_PENDING_JOB_PATTERN
 set -eu
 
-log() { echo "idea-settle-update: $*"; }
-not_yet() { log "not yet: $*"; exit 3; }
-die() { log "ERROR: $*"; exit 1; }
+HOOKS_DIR=$(dirname "$0")
+IDEA_UPDATE_LOG_PREFIX=idea-settle-update
+# shellcheck disable=SC1091
+. "$HOOKS_DIR/update-lib.sh"
 
-URL="${IDEA_NC_HEALTH_URL:-http://127.0.0.1/status.php}"
-RD_VER="${IDEA_SETTLE_RICHDOCUMENTS_VERSION:-9.2.3}"
-USAGE_VER="${IDEA_SETTLE_IDEA_USAGE_VERSION:-1.0.0}"
+idea_refuse_argv "$@"
 
-run_occ() {
-	if [ -n "${OCC:-}" ]; then
-		"$OCC" "$@"
-		return
-	fi
-	if [ "$(id -u)" != 0 ]; then
-		php /var/www/html/occ "$@"
-		return
-	fi
-	if command -v runuser >/dev/null 2>&1; then
-		runuser -u www-data -- php /var/www/html/occ "$@"
-	else
-		su -s /bin/sh -c 'php /var/www/html/occ "$@"' www-data -- "$@"
-	fi
-}
-
-body=$(mktemp "${TMPDIR:-/tmp}/idea-settle.XXXXXX") || die "cannot create temp file"
+body=$(mktemp "${TMPDIR:-/tmp}/idea-settle.XXXXXX") || idea_die "cannot create temp file"
 # shellcheck disable=SC2064
 trap 'rm -f "$body"' EXIT
 
-if ! code=$(curl -sS -m 5 -o "$body" -w '%{http_code}' "$URL"); then
-	not_yet "status.php unreachable"
+if ! code=$(idea_fetch_status "$body"); then
+	idea_not_yet "status.php unreachable"
 fi
-[ "$code" = 200 ] || not_yet "status.php HTTP $code"
+[ "$code" = 200 ] || idea_not_yet "status.php HTTP $code"
 
-# Nextcloud's status.php is compact JSON; accept optional whitespace too.
-has() { grep -Eq "$1" "$body"; }
-if ! has '"installed"[[:space:]]*:[[:space:]]*true'; then
-	die "status.php installed is not true"
+if ! idea_status_has "$body" '"installed"[[:space:]]*:[[:space:]]*true'; then
+	idea_die "status.php installed is not true"
 fi
-if ! has '"maintenance"[[:space:]]*:[[:space:]]*false'; then
-	not_yet "status.php maintenance is not false"
+if ! idea_status_has "$body" '"maintenance"[[:space:]]*:[[:space:]]*false'; then
+	idea_not_yet "status.php maintenance is not false"
 fi
-if ! has '"needsDbUpgrade"[[:space:]]*:[[:space:]]*false'; then
-	not_yet "status.php needsDbUpgrade is not false"
+if ! idea_status_has "$body" '"needsDbUpgrade"[[:space:]]*:[[:space:]]*false'; then
+	idea_not_yet "status.php needsDbUpgrade is not false"
 fi
 
-if ! list=$(run_occ app:list); then
-	not_yet "occ app:list failed"
+jobs_status=0
+matches=$(idea_list_upgrade_jobs) || jobs_status=$?
+if [ "$jobs_status" -eq 0 ]; then
+	idea_not_yet "upgrade jobs still pending"
+fi
+if [ "$jobs_status" -eq 2 ]; then
+	idea_log "upgrade-job probe unavailable (occ background-job:list); relying on status.php"
+elif [ "$jobs_status" -eq 3 ]; then
+	idea_not_yet "upgrade-job probe failed"
 fi
 
-# Only the Enabled: block (up to Disabled: or end of output).
-enabled=$(printf '%s\n' "$list" | sed -n '/^Enabled:/,/^Disabled:/p')
-[ -n "$enabled" ] || die "occ app:list had no Enabled: section"
-
-printf '%s\n' "$enabled" | grep -Eq "^  - richdocuments: ${RD_VER}$" \
-	|| die "richdocuments ${RD_VER} is not enabled (occ app:list)"
-printf '%s\n' "$enabled" | grep -Eq "^  - idea_usage: ${USAGE_VER}$" \
-	|| die "idea_usage ${USAGE_VER} is not enabled (occ app:list)"
-
-log "settled (richdocuments ${RD_VER}, idea_usage ${USAGE_VER} enabled)"
+idea_log "settled"
 exit 0

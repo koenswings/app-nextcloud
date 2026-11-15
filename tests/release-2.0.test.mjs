@@ -1,6 +1,6 @@
 /**
  * Draft release 2.0-32.0.15: version wiring, official Nextcloud 32 pin,
- * bundled-app sums, Prepare/Settle contract fields.
+ * bundled-app sums, Prepare/Verify/Work/Settle contract fields including user.
  * Run: node --test tests/
  * check-compose: set AAD_CHECK_COMPOSE to agent-app-dev script/check-compose.mjs to also run it.
  */
@@ -47,19 +47,43 @@ it('updatesFrom lists App major 1 (the 1.x line, including 1.8); healthTimeout a
   assert.match(compose, /^      start_period: 600s$/m)
 })
 
-it('x-app.update.prepare and settle match Axle\'s contract shape and the scripts are mounted executable', () => {
+it('x-app.update prepare/verify/work/settle match the addendum, with user 0 / 33, and the scripts are mounted executable', () => {
   assert.match(compose, /^  update:$/m)
-  assert.match(compose, /^    prepare:\n      service: nextcloud-app\n      command: \/idea\/hooks\/prep-custom-apps-for-upgrade\.sh\n      timeout: 600$/m)
-  assert.match(compose, /^    settle:\n      service: nextcloud-app\n      command: \/idea\/hooks\/settle-update\.sh\n      interval: 60\n      timeout: 3600$/m)
+  assert.match(compose, /^    prepare:\n      service: nextcloud-app\n      user: "0"\n      command: \/idea\/hooks\/prep-custom-apps-for-upgrade\.sh\n      timeout: 600$/m)
+  assert.match(compose, /^    verify:\n      service: nextcloud-app\n      user: "33"\n      command: \/idea\/hooks\/verify-update\.sh\n      timeout: 120$/m)
+  assert.match(compose, /^    work:\n      service: nextcloud-app\n      user: "33"\n      command: \/idea\/hooks\/work-update\.sh\n      timeout: 3600$/m)
+  assert.match(compose, /^    settle:\n      service: nextcloud-app\n      user: "33"\n      command: \/idea\/hooks\/settle-update\.sh\n      interval: 60\n      timeout: 3600$/m)
   assert.match(compose, /- \.\/hooks:\/idea\/hooks:ro/)
+  assert.match(compose, /^      - IDEA_APP_VERSION=2\.0-32\.0\.15$/m)
   const prep = join(root, 'hooks/prep-custom-apps-for-upgrade.sh')
+  const verify = join(root, 'hooks/verify-update.sh')
+  const work = join(root, 'hooks/work-update.sh')
   const settle = join(root, 'hooks/settle-update.sh')
+  const lib = join(root, 'hooks/update-lib.sh')
   accessSync(prep, constants.X_OK)
+  accessSync(verify, constants.X_OK)
+  accessSync(work, constants.X_OK)
   accessSync(settle, constants.X_OK)
+  accessSync(lib, constants.R_OK)
   const prepSrc = readFileSync(prep, 'utf8')
   const body = prepSrc.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
   assert.ok(!/\bocc\b/.test(body), 'prepare must not invoke occ')
-  assert.ok(!/docker-entrypoint|apache2-foreground/.test(body), 'prepare must not invoke the image entrypoint')
+  assert.ok(!/docker-entrypoint/.test(body), 'prepare must not invoke the image entrypoint')
+  assert.match(body, /unexpected arguments/, 'prepare must refuse leftover argv')
+  for (const f of [prep, verify, work, settle, lib]) {
+    const src = readFileSync(f, 'utf8')
+    assert.doesNotMatch(src, /ASSUMPTION: Engine gap \(10\)/)
+  }
+  const libSrc = readFileSync(lib, 'utf8')
+  const libBody = libSrc.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+  assert.doesNotMatch(libBody, /runuser -u www-data/, 'in-script www-data fallback must be gone; user field is guaranteed')
+  const targets = readFileSync(join(root, 'hooks/update-targets'), 'utf8')
+  assert.match(targets, /^2\.0-32\.0\.15\t9\.2\.3\t1\.0\.0$/m)
+  const settleSrc = readFileSync(settle, 'utf8')
+  const settleBody = settleSrc.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+  assert.ok(!/cron\.php/.test(settleBody), 'settle must not run cron.php')
+  const workSrc = readFileSync(work, 'utf8')
+  assert.match(workSrc, /cron\.php/)
 })
 
 it('app.yaml: engine_tested left at the 1.7 Pi check (Pi proof pending)', () => {
@@ -93,6 +117,9 @@ it('release notes mark 2.0-32.0.15 as DRAFT and keep 1.8-31.0.14', () => {
   assert.match(notes, /db18aaa3a58302d7363dc59905c310f6df5141800bc8f336ab9cdec5577c6211/, '2.0: upstream index digest')
   assert.match(notes, /richdocuments 9\.2\.3/)
   assert.match(notes, /x-app\.update\.prepare/)
+  assert.match(notes, /x-app\.update\.verify/)
+  assert.match(notes, /x-app\.update\.work/)
+  assert.match(notes, /x-app\.update\.settle/)
   assert.match(notes, /^## 1\.8-31\.0\.14$/m)
   assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), 'skeleton config still ships')
 })

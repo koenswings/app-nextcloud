@@ -31,20 +31,52 @@ x-app:
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
     Before that start, x-app.update.prepare stages richdocuments 9.2.3 and idea_usage
     (Nextcloud 31-32) into custom_apps.
-  # Engine Prepare / Settle (Axle contract in nc35-engine-review.md; proposal not approved).
-  # Prepare runs after Swap, before Start, as a one-off
-  #   docker compose run --rm --no-deps --no-TTY --entrypoint /idea/hooks/prep-custom-apps-for-upgrade.sh nextcloud-app
-  # (service name is nextcloud-app, not nextcloud). Idempotent; does not run occ or the
-  # image entrypoint. Settle runs after Health via docker compose exec; exit 0 settled,
-  # 3 not yet, any other exit is an error. Settle is read-only (status.php + occ app:list)
-  # and does not run cron.php.
+  # Engine update hooks (Axle addendum, 2026-11-15; proposal not approved).
+  # Step order after Swap: prepare → Start → Health → verify → work → settle.
+  # prepare and verify failures roll back; work and settle failures never roll
+  # back (the path stops with migrationsPending). Fields: prepare/verify/work
+  # = { service, user?, command, timeout }; settle = { service, user?, command,
+  # interval, timeout }. timeout is required on prepare, verify and work.
+  # Optional user is passed verbatim as compose run --user / exec -u (gaps 10
+  # and 13 accepted). The Engine never defaults a step to 33; omitting user
+  # would be the service user (root on the official image), so every occ/cron
+  # step declares user: "33". service is nextcloud-app, used verbatim.
+  # prepare: after Swap, before Start, as a one-off with a generated override
+  # (entrypoint: [command], empty command, no leftover argv):
+  #   docker compose run --rm --no-deps --no-TTY --user 0 nextcloud-app
+  # Idempotent as a defensive App rule (an interrupted prepare always restores
+  # the snapshot; Resume starts from Swap on the old tree). Does not run occ
+  # or the image entrypoint. Stages bundled richdocuments + idea_usage
+  # (versions from the tarballs / hooks/update-targets) into custom_apps.
+  # verify: once after Health, docker compose exec -T -u 33. Exit 0 passes;
+  # anything else is VERIFY_FAILED and rolls back. Checks status.php
+  # (installed, maintenance false, needsDbUpgrade false) and that
+  # richdocuments is enabled at the bundled version and idea_usage is enabled.
+  # work: once after verify, exec -T -u 33, runs cron.php (Nextcloud: 2-3
+  # times after a major). Non-zero or timeout stops the path with
+  # migrationsPending, no rollback.
+  # settle: polled after work, exec -T -u 33; exit 0 settled, 3 not yet,
+  # other error. Read-only probe (status.php + pending upgrade jobs). Does
+  # not run cron.php. Hook versions are parameterised (tarball / IDEA_APP_VERSION).
   update:
     prepare:
       service: nextcloud-app
+      user: "0"
       command: /idea/hooks/prep-custom-apps-for-upgrade.sh
       timeout: 600
+    verify:
+      service: nextcloud-app
+      user: "33"
+      command: /idea/hooks/verify-update.sh
+      timeout: 120
+    work:
+      service: nextcloud-app
+      user: "33"
+      command: /idea/hooks/work-update.sh
+      timeout: 3600
     settle:
       service: nextcloud-app
+      user: "33"
       command: /idea/hooks/settle-update.sh
       interval: 60
       timeout: 3600
@@ -163,8 +195,9 @@ services:
       # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
       - ./data/backup/db:/idea-backup-db:ro
       - ./hooks/app-healthcheck.sh:/idea/app-healthcheck.sh:ro
-      # x-app.update.prepare / settle (Axle contract). Whole hooks dir so the one-off
-      # Prepare run and the running Settle exec both see the scripts at /idea/hooks/.
+      # x-app.update prepare / verify / work / settle (Axle addendum). Whole hooks
+      # dir so the one-off prepare run and the running exec steps all see the
+      # scripts at /idea/hooks/.
       - ./hooks:/idea/hooks:ro
     # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import
     # (MariaDB's temporary init server has no TCP) has finished before Nextcloud starts.
@@ -215,6 +248,9 @@ services:
       - IDEA_TRUST_LAN_SUBNET=${IDEA_TRUST_LAN_SUBNET:-1}
       # Files Disk and USB stick storages are visible to this group + admin only (created if missing).
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
+      # x-app.update hooks: must match x-app.version. Used to look up
+      # hooks/update-targets when a bundled tarball is not visible.
+      - IDEA_APP_VERSION=2.0-32.0.15
     networks:
       - backend
   nextcloud-db:
