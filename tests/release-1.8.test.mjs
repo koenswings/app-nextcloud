@@ -32,8 +32,9 @@ it('nextcloud-app is pinned to the official 31.0.14-apache index; MariaDB and CO
   assert.deepEqual(imgs, [NC_PIN, MARIADB_PIN, CODE_PIN])
 })
 
-it('app.yaml: engine_tested left at the 1.7 Pi check (Pi proof pending)', () => {
+it('app.yaml: engine_tested left at the 1.7 Pi check (Pi proof pending); idea_app_version is not present', () => {
   assert.match(appYaml, /engine_tested:\n    commit: "cba91a6"\n    version: "1\.0"\n    date: "2026-11-15"/)
+  assert.doesNotMatch(appYaml, /^idea_app_version:/m)
 })
 
 it('bundled-apps SHA256SUMS still pin idea_usage 1.0.0 and richdocuments 8.8.3, and the tarballs match', async () => {
