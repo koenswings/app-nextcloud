@@ -5,10 +5,58 @@ Kits get a release only through Engine `updateApp` (idea#374). Until a Nextcloud
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
 
+## 5.0-34.0.6
+
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
+reserved). No image publish, no tag. Stacked on the 4.0-34.0.6 draft. Database-only App
+major: it comes after the 34 hop and before the Nextcloud 35 hop (idea#548 Q9, §8.2;
+app-nextcloud#31).
+
+- **Database-only App major:** 5.0 exists only because of the MariaDB upgrade below; there is
+  no change to Nextcloud or the App itself (agent-app-dev `docs/app-bundle-integrity.md`).
+  Nextcloud stays `nextcloud:34.0.6-apache@sha256:3031e7f87baaceb863a755921ebf463bc26ea71855c07ad7858e2ae25a5a0ad7`,
+  CODE stays `koenswings/nextcloud-code:1.0-24.04.13.2`, and the bundled apps
+  (`richdocuments` 11.1.3, `idea_usage` 1.0.0 for 31–34) and their checksums are unchanged.
+  `x-app.updatesFrom: [4]`: only the 4.x line (Nextcloud 34) can take it. Bundle name
+  `nextcloud-5.0-34.0.6`.
+- **x-app.update:** the same `x-app.update.prepare`, `x-app.update.verify`, `x-app.update.work`
+  and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
+  Prepare re-stages the same tarballs (idempotent), verify checks Nextcloud is up with
+  richdocuments 11.1.3 and idea_usage 1.0.0 enabled, work runs `cron.php`, and settle is the
+  read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`.
+
+**Database:** MariaDB 11.7.2 → 11.8.9 (LTS), the documented recommended version for
+Nextcloud 33–34 and on the Nextcloud 35 list. `nextcloud-db` moves from
+`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412`
+to the official `mariadb:11.8.9-noble@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707`
+(Ubuntu 24.04 base like before; `linux/arm64` variant v8 is in the index, platform manifest
+`sha256:5578b77f7f2cbfad1ba71619b080dcfb5cf84e99b5293059afbe6cbca9a7ad0d`). 11.8.9 is the
+latest 11.8 image on Docker Hub (2026-11-15). The usual retag
+`koenswings/nextcloud-mariadb:1.0-11.8.9-MariaDB-ubu2404` is not published yet (needs Koen
+YES), so the compose pins the official tag+index digest until then, like the Nextcloud pin.
+**Upgrade step:** on the first start of the new image the MariaDB entrypoint runs
+`mariadb-upgrade` because `MARIADB_AUTO_UPGRADE=1` is set (it backs up the system tables into
+the data dir first). The db only turns healthy after that (db healthcheck `start_period`
+900 s), and Nextcloud starts after the db is healthy, as before. The server options in
+`command:` are all still valid in 11.8 (`innodb_read_only_compressed` still exists at
+`mariadb-11.8.9`). The upgraded data files cannot go back to 11.7: the Backup Disk backup
+that an App-major update requires, and the pre-update snapshot, are the way back. The
+backup hooks (`mariadb-dump` into `data/backup/db`, import on restore) are unchanged.
+
+**Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
+not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
+
+**Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
+pending (pool reserved): time the `mariadb-upgrade` start, confirm `SELECT VERSION()` is
+11.8.9, Nextcloud healthy with no database warning, and backup/restore on 11.8. `engine_tested`
+is left at the 1.7 value (cba91a6) until that proof.
+
 ## 4.0-34.0.6
 
 **DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
-reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft.
+reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft. The live tree on
+this branch is now 5.0-34.0.6; this section is the 4.0 hop that 5.0 updates from.
 
 - **Nextcloud major hop:** official `library/nextcloud` `33.0.11-apache` → `34.0.6-apache`
   (latest 34.0.x as of 2026-11-15). App major 3.0 → 4.0. Bundle name `nextcloud-4.0-34.0.6`.
