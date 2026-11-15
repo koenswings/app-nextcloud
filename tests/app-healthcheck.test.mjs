@@ -151,9 +151,10 @@ it('down: curl failure is unhealthy', () => {
   assert.equal(r.status, 1, r.stdout + r.stderr)
 })
 
-it('HTTP 200 still upgrading, HTTP 503 without maintenance, and HTTP 500 are unhealthy', () => {
+it('HTTP 200 still upgrading, HTTP 200 not installed, HTTP 503 without maintenance, and HTTP 500 are unhealthy', () => {
   const cases = [
     { IDEA_HC_CODE: '200', IDEA_HC_BODY: '{"installed":true,"maintenance":false,"needsDbUpgrade":true}' },
+    { IDEA_HC_CODE: '200', IDEA_HC_BODY: '{"installed":false,"maintenance":false,"needsDbUpgrade":false}' },
     { IDEA_HC_CODE: '503', IDEA_HC_BODY: '{"installed":false,"maintenance":false,"needsDbUpgrade":false}' },
     { IDEA_HC_CODE: '500', IDEA_HC_BODY: READY },
   ]

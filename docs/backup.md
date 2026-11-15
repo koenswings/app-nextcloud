@@ -38,7 +38,8 @@ unhealthy mid-backup.
 The Docker healthcheck (`hooks/app-healthcheck.sh`, mounted at `/idea/app-healthcheck.sh`) now
 treats that window as alive, but only while the backup marker exists:
 
-- HTTP 200 and a body containing `"maintenance":false,"needsDbUpgrade":false`: healthy (ready).
+- HTTP 200 and a body containing `"installed":true,"maintenance":false,"needsDbUpgrade":false`: healthy
+  (ready). An unfinished first install reports `"installed":false` and stays unhealthy.
 - HTTP 200 or 503, a body containing `"maintenance":true`, and `data/nextcloud/data/.idea-backup-pending`
   (`/var/www/html/data/.idea-backup-pending` in the app container) whose age
   (`now - mtime`) is in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,

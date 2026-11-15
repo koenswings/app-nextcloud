@@ -12,7 +12,7 @@ same pinned images, so no image is rebuilt or republished.
   postHook and by `00-idea-restore.sh` on every start) and the marker's age (`now - mtime`) is
   in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,
   `IDEA_BACKUP_MARKER_MAX_AGE_S` default 7200). HTTP 200 with
-  `"maintenance":false,"needsDbUpgrade":false` stays the ready path; HTTP 200 or 503 with
+  `"installed":true,"maintenance":false,"needsDbUpgrade":false` stays the ready path; HTTP 200 or 503 with
   `"maintenance":true` (Nextcloud 31 answers 200) is accepted only with a fresh marker, so a failed postHook, a manual
   `occ maintenance:mode --on`, a leftover older than 2 h, or a mtime more than 5 min in the
   future still goes unhealthy. `hookExclude` lists the marker so it never lands in a hook

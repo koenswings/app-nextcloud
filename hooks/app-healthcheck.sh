@@ -3,7 +3,8 @@
 #
 # Alive when:
 #   - status.php returns HTTP 200 and the body contains
-#     "maintenance":false,"needsDbUpgrade":false  (normal ready state), or
+#     "installed":true,"maintenance":false,"needsDbUpgrade":false  (normal ready
+#     state; an unfinished first install reports installed:false), or
 #   - status.php returns HTTP 200 or 503, the body contains "maintenance":true, and
 #     the IDEA backup marker exists with age in
 #     [-IDEA_BACKUP_MARKER_MAX_FUTURE_S, IDEA_BACKUP_MARKER_MAX_AGE_S]
@@ -58,7 +59,7 @@ trap 'rm -f "$tmp"' EXIT
 
 code=$(curl -sS -m 4 -o "$tmp" -w '%{http_code}' "$URL") || exit 1
 
-if [ "$code" = 200 ] && grep -q '"maintenance":false,"needsDbUpgrade":false' "$tmp"; then
+if [ "$code" = 200 ] && grep -q '"installed":true,"maintenance":false,"needsDbUpgrade":false' "$tmp"; then
 	exit 0
 fi
 if { [ "$code" = 200 ] || [ "$code" = 503 ]; } && grep -q '"maintenance":true' "$tmp" && marker_is_fresh "$MARKER"; then
