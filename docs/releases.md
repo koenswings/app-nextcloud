@@ -234,9 +234,18 @@ is left at the 1.7 value (cba91a6) until that proof.
 Files and accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
 No App-level migration. MariaDB and CODE are unchanged.
 
-**Tested:** Pi proof pending (needs a free pool Pi: updateApp 1.7→1.8, health, login per role,
-Office open, backup/restore). `engine_tested` is left at the 1.7 value (cba91a6) until that
-proof.
+**Tested:** Pi proof on idea04 (Raspberry Pi 4), Engine 0038e31, 15 November 2026 (rerun).
+`updateApp` 1.7-31.0.1 → 1.8-31.0.14, trace `4b9b6c17-bde0-4394-bdd6-f86e713a8fde`, status ok
+(Fetch, Check, Snapshot, Swap, Start, Health). About 3¼ minutes of downtime: 193–196 s from the
+container stop to the first `status.php` 200 / Docker healthy, 205 s to Engine Running (one run,
+small test school). Post-update checks passed (31.0.14, maintenance false, needsDbUpgrade
+false, richdocuments 8.8.3 and idea_usage 1.0.0 enabled, login per role, file checksums,
+Office open), and so did backup, list, verify and restore (the same checks passed again after
+the restore). Run 1 (Engine d366432) failed on engine#447 (Swap could not overwrite the
+bundle's relative symlinks) and rolled back automatically to 1.7-31.0.1 with its data.
+`engine_tested` in `app.yaml` is still the 1.7 value (cba91a6).
+
+**Tags:** git tags `1.7-31.0.1` (1c8247b) and `1.8-31.0.14` (6a48eca) now exist.
 
 ## 1.7-31.0.1
 
