@@ -29,9 +29,9 @@ it('image pins unchanged since 1.2 (digest-pinned, no rebuild)', () => {
   ])
 })
 
-it('app.yaml: engine_tested is set from the on-Pi check, idea_app_version unchanged', () => {
+it('app.yaml: engine_tested is set from the on-Pi check; idea_app_version is not present', () => {
   assert.match(appYaml, /engine_tested:\n    commit: "cba91a6"\n    version: "1\.0"\n    date: "2026-11-15"/)
-  assert.match(appYaml, /^idea_app_version: "1\.0"$/m)
+  assert.doesNotMatch(appYaml, /^idea_app_version:/m)
 })
 
 it('release notes name 1.7-31.0.1 and keep 1.6-31.0.1 and 1.5-31.0.1', () => {
