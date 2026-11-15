@@ -9,17 +9,20 @@ same pinned images, so no image is rebuilt or republished.
 - **Healthcheck during backup** (app-nextcloud#29): the `nextcloud-app` Docker healthcheck treats
   maintenance mode as alive only while an IDEA backup is in progress
   (`data/backup/db/.idea-backup-pending`, written at the start of `db-dump.sh`, removed by
-  `db-clean.sh`). HTTP 200 with `"maintenance":false,"needsDbUpgrade":false` stays the ready
-  path; HTTP 503 with `"maintenance":true` is accepted only with that marker, so a failed
-  postHook or a manual `occ maintenance:mode --on` still goes unhealthy. `x-app.healthCheck` is
+  `db-clean.sh`) and the marker's mtime is no older than 2 hours (`IDEA_BACKUP_MARKER_MAX_AGE_S`,
+  default 7200). HTTP 200 with `"maintenance":false,"needsDbUpgrade":false` stays the ready
+  path; HTTP 503 with `"maintenance":true` is accepted only with a fresh marker, so a failed
+  postHook, a manual `occ maintenance:mode --on`, or a leftover marker older than 2 h still goes
+  unhealthy. A future mtime counts as fresh (backward clock skew). `x-app.healthCheck` is
   unchanged (updateApp still waits for maintenance off).
 - **Images** unchanged since 1.2 (same digests).
 
 **Migration:** none.
 
-**Tested:** `node --test tests/` on the box. A Pi check should still prove a hook backup whose
-dump+borg window exceeds about 45 s leaves `nextcloud-app` healthy, and that maintenance left on
-without the marker goes unhealthy.
+**Tested:** `node --test tests/` on the box. A Pi check should still prove: a hook backup whose
+dump+borg window exceeds about 45 s leaves `nextcloud-app` healthy; after postHook the marker is
+gone and the app stays healthy; maintenance left on with no marker goes unhealthy; maintenance
+on with a marker whose mtime is more than 2 h old goes unhealthy.
 
 ## 1.6-31.0.1
 

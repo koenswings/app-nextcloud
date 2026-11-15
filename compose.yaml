@@ -97,8 +97,9 @@ services:
     command: ["apache2-foreground"]
     # Docker health (app-nextcloud#29): /idea/app-healthcheck.sh. Alive on a ready status.php,
     # or on HTTP 503 with "maintenance":true only while data/backup/db/.idea-backup-pending
-    # exists (the live backup window). A stuck or manual maintenance has no marker and still
-    # goes unhealthy. The image has curl. start_period equals healthTimeout 300 so the first
+    # exists and is no older than 2 h (IDEA_BACKUP_MARKER_MAX_AGE_S, default 7200). A stuck or
+    # manual maintenance (no marker, or a leftover marker older than 2 h) still goes unhealthy.
+    # The image has curl and GNU stat. start_period equals healthTimeout 300 so the first
     # start or an upgrade never counts as unhealthy before the Engine gives up.
     healthcheck:
       test: ["CMD", "/idea/app-healthcheck.sh"]

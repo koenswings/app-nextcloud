@@ -33,7 +33,8 @@ ID="$DIR/nextcloud.sql.id"
 # healthcheck stays unhealthy on it, so Nextcloud never starts on a half-imported database.
 BEGIN="$DIR/00-idea-import-begin.sh"
 END="$DIR/zz-idea-import-end.sh"
-# app-nextcloud#29: app healthcheck treats maintenance as alive only while this exists.
+# app-nextcloud#29: app healthcheck treats maintenance as alive only while this exists
+# and is no older than 2 h (mtime; IDEA_BACKUP_MARKER_MAX_AGE_S, default 7200).
 # Hidden, so MariaDB initdb (`for f in *`) never sources it. Written just before the dump
 # so the dump and borg window are covered; the few seconds after maintenance:on and before
 # this script starts are well under the 45 s Docker retry budget. db-clean.sh removes it.

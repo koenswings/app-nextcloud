@@ -3,7 +3,7 @@
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,11 +58,48 @@ it('healthy: HTTP 200 with maintenance false and needsDbUpgrade false', () => {
   assert.equal(r.stdout, '')
 })
 
-it('maintenance with the backup marker: HTTP 503 with maintenance true is alive', () => {
+it('maintenance with a fresh backup marker: HTTP 503 with maintenance true is alive', () => {
   writeFileSync(marker, '')
   const r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.stdout, '')
+})
+
+it('maintenance with a marker older than 2 h is unhealthy', () => {
+  writeFileSync(marker, '')
+  const past = Date.now() / 1000 - 3 * 3600
+  utimesSync(marker, past, past)
+  const r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+})
+
+it('boundary: a marker aged 7190 s (just under 2 h) is alive; 7210 s (just over) is not', () => {
+  writeFileSync(marker, '')
+  const now = Date.now() / 1000
+  utimesSync(marker, now - 7190, now - 7190)
+  let r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 0, 'just under 2 h should still be fresh: ' + r.stdout + r.stderr)
+  utimesSync(marker, now - 7210, now - 7210)
+  r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, 'just over 2 h should be stale: ' + r.stdout + r.stderr)
+})
+
+it('a future mtime counts as fresh (backward clock skew)', () => {
+  writeFileSync(marker, '')
+  const future = Date.now() / 1000 + 3600
+  utimesSync(marker, future, future)
+  const r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+})
+
+it('IDEA_BACKUP_MARKER_MAX_AGE_S shortens the bound', () => {
+  writeFileSync(marker, '')
+  const past = Date.now() / 1000 - 30
+  utimesSync(marker, past, past)
+  let r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT, IDEA_BACKUP_MARKER_MAX_AGE_S: '60' })
+  assert.equal(r.status, 0, '30 s old with a 60 s bound: ' + r.stdout + r.stderr)
+  r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT, IDEA_BACKUP_MARKER_MAX_AGE_S: '10' })
+  assert.equal(r.status, 1, '30 s old with a 10 s bound: ' + r.stdout + r.stderr)
 })
 
 it('maintenance without the backup marker is unhealthy', () => {

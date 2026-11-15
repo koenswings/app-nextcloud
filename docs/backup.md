@@ -37,9 +37,13 @@ treats that window as alive, but only while the backup marker exists:
 
 - HTTP 200 and a body containing `"maintenance":false,"needsDbUpgrade":false`: healthy (ready).
 - HTTP 503, a body containing `"maintenance":true`, and `data/backup/db/.idea-backup-pending`
-  (bound read-only at `/idea-backup-db` in the app container): healthy (backup in progress).
-  `db-dump.sh` writes the marker just before the dump; `db-clean.sh` removes it (every postHook
-  step always runs, so a failed dump or a failed `maintenance:mode --off` still clears it).
+  (bound read-only at `/idea-backup-db` in the app container) whose mtime is no older than
+  2 hours (`IDEA_BACKUP_MARKER_MAX_AGE_S`, default 7200): healthy (backup in progress).
+  `db-dump.sh` writes the marker (just `touch`, so mtime is "now") just before the dump;
+  `db-clean.sh` removes it (every postHook step always runs, so a failed dump or a failed
+  `maintenance:mode --off` still clears it). A leftover marker older than the bound counts as
+  absent, so a stuck maintenance window goes unhealthy. A future mtime is treated as fresh, so
+  a backward clock step does not fail a live backup.
 - Anything else, including maintenance with no marker (a failed postHook that left maintenance
   on, or a manual `occ maintenance:mode --on`): unhealthy.
 
@@ -120,4 +124,4 @@ checks: `.env`, `data/nextcloud/config/config.php`, `data/nextcloud/version.php`
 
 `node --test tests/*.test.mjs` (`tests/backup-hook.test.mjs`: compose block, dump/clean with a
 fake `mariadb-dump`, the restore hook with `tests/fake-occ-restore.mjs`;
-`tests/app-healthcheck.test.mjs`: ready, maintenance with and without the backup marker, and down).
+`tests/app-healthcheck.test.mjs`: ready, maintenance with a fresh marker, without it, a marker older than 2 h, the 2 h boundary, and down).
