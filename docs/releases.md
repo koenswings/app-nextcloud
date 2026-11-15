@@ -7,10 +7,9 @@ index; MariaDB and CODE stay on the same pins as 1.2.
 
 ## 5.0-34.0.6
 
-**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
-reserved). No image publish, no tag. Stacked on the 4.0-34.0.6 draft. Database-only App
-major: it comes after the 34 hop and before the Nextcloud 35 hop (idea#548 Q9, §8.2;
-app-nextcloud#31).
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). No image publish, no tag.
+Stacked on the 4.0-34.0.6 draft. Database-only App major: it comes after the 34 hop and
+before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
 
 - **Database-only App major:** 5.0 exists only because of the MariaDB upgrade below; there is
   no change to Nextcloud or the App itself (agent-app-dev `docs/app-bundle-integrity.md`).
@@ -19,12 +18,25 @@ app-nextcloud#31).
   (`richdocuments` 11.1.3, `idea_usage` 1.0.0 for 31–34) and their checksums are unchanged.
   `x-app.updatesFrom: [4]`: only the 4.x line (Nextcloud 34) can take it. Bundle name
   `nextcloud-5.0-34.0.6`.
+- **Offered as an App major:** updateApp offers 5.0 with `--allow-major` and requires a
+  Backup Disk backup first (`NEEDS_BACKUP`). It also takes the local pre-update snapshot
+  on the App Disk. A minor update would get only that snapshot.
 - **x-app.update:** the same `x-app.update.prepare`, `x-app.update.verify`, `x-app.update.work`
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
   Prepare re-stages the same tarballs (idempotent), verify checks Nextcloud is up with
   richdocuments 11.1.3 and idea_usage 1.0.0 enabled, work runs `cron.php`, and settle is the
   read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
-  itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`.
+  itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
+  4.0 instance those stages are no-ops for this hop (Nextcloud and the bundled apps do not
+  change).
+- **Engine floor:** 5.0 declares those stages, so Engine 41ba677 (engine#463) and later
+  refuse the bundle at Check with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456
+  stages land (#456 L). A Pi proof on the pool's pre-#463 Engine 80ba4af is still a valid
+  proof of the MariaDB upgrade, from a fresh 4.0 install, because the stages are no-ops
+  and `mariadb-upgrade` is the image entrypoint. Field kits still need #456 L: the 2.0–4.0
+  hops that precede 5.0 are not safe without stages, and 41ba677+ refuses 5.0 itself.
+  Kits on an Engine older than 41ba677 must never get Nextcloud 2.0+ bundles
+  (agent-app-dev `docs/app-bundle-integrity.md`).
 
 **Database:** MariaDB 11.7.2 → 11.8.9 (LTS), the documented recommended version for
 Nextcloud 33–34 and on the Nextcloud 35 list. `nextcloud-db` moves from
@@ -40,16 +52,29 @@ YES), so the compose pins the official tag+index digest until then, like the Nex
 the data dir first). The db only turns healthy after that (db healthcheck `start_period`
 900 s), and Nextcloud starts after the db is healthy, as before. The server options in
 `command:` are all still valid in 11.8 (`innodb_read_only_compressed` still exists at
-`mariadb-11.8.9`). The upgraded data files cannot go back to 11.7: the Backup Disk backup
-that an App-major update requires, and the pre-update snapshot, are the way back. The
-backup hooks (`mariadb-dump` into `data/backup/db`, import on restore) are unchanged.
+`mariadb-11.8.9`). The upgraded data files cannot go back to 11.7 in place (no downgrade).
+The Backup Disk backup that an App-major update requires, and the pre-update snapshot, are
+the way back. The backup hooks (`mariadb-dump` into `data/backup/db`, import on restore)
+are unchanged.
+
+**Rollback:** if updateApp fails, the Engine rolls back by restoring the pre-update
+snapshot (the 11.7 data) and the previous 4.0 bundle. That can succeed because the snapshot
+is taken before `mariadb-upgrade`. You cannot downgrade in place by running the 11.7 image
+on 11.8 data. If the rollback itself fails, the instance is Stopped with `ROLLBACK FAILED`
+and the way back is the Backup Disk backup.
+
+**Downtime:** not yet measured. The db healthcheck `start_period` is 900 s to cover
+`mariadb-upgrade`; Nextcloud `healthTimeout` is 600 s. Timings will be recorded on the
+80ba4af proof.
 
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
 
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
-pending (pool reserved): time the `mariadb-upgrade` start, confirm `SELECT VERSION()` is
-11.8.9, Nextcloud healthy with no database warning, and backup/restore on 11.8. `engine_tested`
+is planned on Engine 80ba4af from a fresh 4.0-34.0.6 install, after the duration walk frees
+a pool Pi, and only when Steve says go. It cannot run on Engine 41ba677+, which refuses this
+bundle until #456 L. Confirm `SELECT VERSION()` is 11.8.9, time the `mariadb-upgrade` start,
+Nextcloud healthy with no database warning, and backup/restore on 11.8. `engine_tested`
 is left at the 1.7 value (cba91a6) until that proof.
 
 ## 4.0-34.0.6

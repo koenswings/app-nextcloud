@@ -29,14 +29,24 @@ x-app:
   # (idea#548 Q9, agent-app-dev docs/app-bundle-integrity.md): MariaDB 11.7 -> 11.8 on the
   # same Nextcloud 34.0.6, before the Nextcloud 35 hop. It lists only 4: a 3.x or older
   # instance is still on Nextcloud 33 or older and must take 4.0 first.
+  # Offered with --allow-major; a Backup Disk backup is required first (NEEDS_BACKUP).
   updatesFrom: [4]
   migrationNote: >
     Database upgrade only: MariaDB 11.7.2 -> 11.8.9 (LTS). Nextcloud stays 34.0.6 and
-    the App is otherwise unchanged. On the first start of the new MariaDB image its
-    entrypoint runs mariadb-upgrade (MARIADB_AUTO_UPGRADE=1) before the database turns
-    healthy; Nextcloud then starts as before. The new data files cannot go back to 11.7;
-    the pre-update backup and snapshot are the way back. Files and accounts are kept.
+    the App is otherwise unchanged. Offered with --allow-major; a Backup Disk backup
+    is required first (NEEDS_BACKUP), and a local pre-update snapshot is also taken.
+    On the first start of the new MariaDB image its entrypoint runs mariadb-upgrade
+    (MARIADB_AUTO_UPGRADE=1) before the database turns healthy; Nextcloud then starts
+    as before. The new data files cannot go back to 11.7 in place (no downgrade). A
+    failed update rolls back by restoring the pre-update snapshot and the previous
+    bundle; if that fails (ROLLBACK FAILED), restore from the Backup Disk backup.
+    Files and accounts are kept.
   # Engine update hooks (Axle addendum, 2026-11-15; idea#548 merged).
+  # Engine floor: these four stages are declared (same as 4.0). They are no-ops
+  # on a correct 4.0 instance, but Engine 41ba677+ (engine#463) still refuses
+  # this bundle with UPDATE_STAGES_UNSUPPORTED until #456 L. A Pi proof on
+  # pre-#463 Engine 80ba4af is valid because mariadb-upgrade is the image
+  # entrypoint. Field kits still need #456 L.
   # Step order after Swap: prepare → Start → Health → verify → work → settle.
   # prepare and verify failures roll back; work and settle failures never roll
   # back (the path stops with migrationsPending). Fields: prepare/verify/work
