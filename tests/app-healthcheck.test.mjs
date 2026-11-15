@@ -46,7 +46,8 @@ const run = (env = {}) => spawnSync(SCRIPT, [], { encoding: 'utf8',
 
 it('compose: app healthcheck script, interval/retries unchanged, x-app.healthCheck stays strict', () => {
   assert.match(compose, /test: \["CMD", "\/idea\/app-healthcheck\.sh"\]/)
-  assert.match(compose, /interval: 15s\n      timeout: 5s\n      retries: 3\n      start_period: 300s/)
+  assert.match(compose, /interval: 15s\n      timeout: 5s\n      retries: 3\n      start_period: 600s/)
+  assert.match(compose, /^  healthTimeout: 600$/m)
   assert.match(compose, /- \.\/hooks\/app-healthcheck\.sh:\/idea\/app-healthcheck\.sh:ro/)
   assert.match(compose, /healthCheck:\n    path: \/status\.php\n    expect: '"maintenance":false,"needsDbUpgrade":false'/)
   assert.doesNotMatch(compose, /curl -fsS -m 4 http:\/\/127\.0\.0\.1\/status\.php/)

@@ -1,9 +1,56 @@
 # Releases
 
 Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>-<Nextcloud version>`).
-Kits get a release only through Engine `updateApp` (idea#374). Until the 1.8 Nextcloud image
+Kits get a release only through Engine `updateApp` (idea#374). Until a Nextcloud image
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
+
+## 2.0-32.0.15
+
+**DRAFT** (pending the app-nextcloud#32 proposal). Local prep only: no push, no PR, no
+image publish, no Pi proof.
+
+- **Nextcloud major hop:** official `library/nextcloud` `31.0.14-apache` → `32.0.15-apache`
+  (latest 32.0.x as of 2026-11-15). App major 1.8 → 2.0. Bundle name `nextcloud-2.0-32.0.15`.
+  `x-app.updatesFrom: [1]` (repo convention: a list of App majors; 1 covers the 1.x line
+  including 1.8-31.0.14). Nextcloud cannot skip majors.
+- **Images:** `nextcloud-app` is pinned to the upstream multi-platform index
+  `nextcloud:32.0.15-apache@sha256:db18aaa3a58302d7363dc59905c310f6df5141800bc8f336ab9cdec5577c6211`
+  (`linux/arm64` variant v8 is in the index, platform manifest
+  `sha256:3c169716aff4acde4f809c0c522d9c0b95c15b86832685614fe7909adbe6c17f`). The usual IDEA
+  retag `koenswings/nextcloud:2.0-32.0.15` is not published yet (needs Koen YES; already
+  on #375). check-compose and the Engine pin check (`saveName()`, idea#322) require
+  `repo:tag@sha256:<64 hex>` — a digest-only pin and an unpublished placeholder are both
+  refused — so the compose uses the published official tag+index digest until the retag
+  exists and the pin is swapped. MariaDB
+  (`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404`) and CODE
+  (`koenswings/nextcloud-code:1.0-24.04.13.2`) are unchanged since 1.2.
+- **bundled apps:** `richdocuments` 9.2.3 (`info.xml` min-version 32, max-version 32).
+  `idea_usage` stays 1.0.0 with the Nextcloud range widened to min-version 31, max-version 32
+  (version bump to 1.0.1 is deferred to the release decision). 8.8.3 is not shipped: a
+  fresh 32 install would otherwise extract the 31-only tarball first.
+- **Prepare hook:** `x-app.update.prepare` runs `hooks/prep-custom-apps-for-upgrade.sh`
+  as a one-off `docker compose run --rm --no-deps --no-TTY --entrypoint … nextcloud-app`
+  after Swap and before Start (Axle contract). It verifies SHA256SUMS, moves each
+  existing `custom_apps/<app>` into a new timestamped folder under
+  `data/nextcloud/custom_apps/.idea-upgrade-backup/` (`mv`, never `rm -rf`, never
+  overwrites a backup), extracts the new tarballs, and is a no-op once `info.xml`
+  already shows the target version and max-version. It does not invoke occ.
+- **Settle check:** `x-app.update.settle` runs `hooks/settle-update.sh` after Health
+  (`docker compose exec`; exit 0 settled, 3 not yet, other error). Read-only:
+  `status.php` installed/maintenance/needsDbUpgrade, plus `occ app:list` showing
+  richdocuments 9.2.3 and idea_usage 1.0.0 enabled. It does not run `cron.php`.
+- **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
+  Re-measure on a pool Pi before locking the release.
+
+**Migration:** Nextcloud's own database upgrade on the first start of 2.0 (31.0.14 →
+32.0.15), after Prepare has staged the new apps. Files and accounts are kept.
+Nextcloud is in maintenance mode until the upgrade has finished. MariaDB and CODE
+are unchanged.
+
+**Tested:** Pi proof pending (needs a free pool Pi and the Engine Prepare step).
+`engine_tested` is left at the 1.7 value (cba91a6) until that proof. The #32
+proposal is not approved; this entry is a draft.
 
 ## 1.8-31.0.14
 

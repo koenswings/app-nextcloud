@@ -10,23 +10,44 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "1.8-31.0.14"
+  version: "2.0-32.0.15"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
-  # Measured on idea04 (Pi 4, 2026-10-28, idea#351): 30.0.6 -> 31.0.1 first start 66-69 s to status.php maintenance:false, needsDbUpgrade:false (6 users, 1203 files, db 163 MB). About 4x margin: real instances add Office and more apps to upgrade.
-  # healthCheck is the updateApp Health-step probe (HTTP 2xx/3xx and this expect). It stays
-  # stricter than the Docker healthcheck, which also accepts maintenance during an IDEA
-  # backup only (app-nextcloud#29).
+  # 1.x used 300 s (~4x the measured 30.0.6 -> 31.0.1 first start of 66-69 s on idea04,
+  # 2026-10-28). 2.0 is a Nextcloud major (31 -> 32): desk estimate 600 s until a pool
+  # Pi times this hop (hop-32-prep.md §8). healthCheck is the updateApp Health-step
+  # probe (HTTP 2xx/3xx and this expect). It stays stricter than the Docker healthcheck,
+  # which also accepts maintenance during an IDEA backup only (app-nextcloud#29).
   healthCheck:
     path: /status.php
     expect: '"maintenance":false,"needsDbUpgrade":false'
-  healthTimeout: 300
+  healthTimeout: 600
   # Nextcloud cannot skip majors: an App release that moves to the next Nextcloud major
-  # lists only the App major directly before it. 1.x is the first major, so none yet.
-  updatesFrom: []
+  # lists only the previous App major (repo convention: a list of major numbers, so
+  # [1] covers the 1.x line including 1.8-31.0.14).
+  updatesFrom: [1]
   migrationNote: >
-    Nextcloud upgrades its database on the first start of the new version. Files and
+    Nextcloud upgrades its database on the first start of 2.0 (31 -> 32). Files and
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
+    Before that start, x-app.update.prepare stages richdocuments 9.2.3 and idea_usage
+    (Nextcloud 31-32) into custom_apps.
+  # Engine Prepare / Settle (Axle contract in nc35-engine-review.md; proposal not approved).
+  # Prepare runs after Swap, before Start, as a one-off
+  #   docker compose run --rm --no-deps --no-TTY --entrypoint /idea/hooks/prep-custom-apps-for-upgrade.sh nextcloud-app
+  # (service name is nextcloud-app, not nextcloud). Idempotent; does not run occ or the
+  # image entrypoint. Settle runs after Health via docker compose exec; exit 0 settled,
+  # 3 not yet, any other exit is an error. Settle is read-only (status.php + occ app:list)
+  # and does not run cron.php.
+  update:
+    prepare:
+      service: nextcloud-app
+      command: /idea/hooks/prep-custom-apps-for-upgrade.sh
+      timeout: 600
+    settle:
+      service: nextcloud-app
+      command: /idea/hooks/settle-update.sh
+      interval: 60
+      timeout: 3600
   snapshotExclude: []    # user files and the database are both needed for a rollback
   filesMount:
     path: /mnt/idea-files
@@ -95,15 +116,15 @@ networks:
 services:
   nextcloud-app:
     #image: nextcloud
-    # Publish pending (Koen YES): retag this upstream index to
-    # koenswings/nextcloud:1.8-31.0.14 and swap the pin. Official
-    # library/nextcloud 31.0.14-apache multi-platform index (linux/arm64 is in it).
+    # Publish pending (Koen YES on #375): retag this upstream index to
+    # koenswings/nextcloud:2.0-32.0.15 and swap the pin. Official
+    # library/nextcloud 32.0.15-apache multi-platform index (linux/arm64 is in it).
     # check-compose and Engine saveName() require repo:tag@sha256:<64 hex>
-    # (no digest-only pin, no unpublished placeholder), so the compose uses
+    # (no digest-only pin, no unpublished retag name), so the compose uses
     # the published official tag+index digest until the retag exists.
-    image: nextcloud:31.0.14-apache@sha256:07ec73cc816e58d6f45a162cd53ef886462c29271a23fc68d0124cec276e3767
+    image: nextcloud:32.0.15-apache@sha256:db18aaa3a58302d7363dc59905c310f6df5141800bc8f336ab9cdec5577c6211
     labels:
-      x-app-version: "1.8-31.0.14"
+      x-app-version: "2.0-32.0.15"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -116,14 +137,14 @@ services:
     # exists with age in [-300 s, 7200 s] (IDEA_BACKUP_MARKER_MAX_FUTURE_S /
     # IDEA_BACKUP_MARKER_MAX_AGE_S). A stuck or manual maintenance (no marker, a leftover
     # older than 2 h, or a mtime more than 5 min in the future) still goes unhealthy.
-    # The image has curl and GNU stat. start_period equals healthTimeout 300 so the first
-    # start or an upgrade never counts as unhealthy before the Engine gives up.
+    # The image has curl and GNU stat. start_period equals healthTimeout 600 so the first
+    # start or a major upgrade never counts as unhealthy before the Engine gives up.
     healthcheck:
       test: ["CMD", "/idea/app-healthcheck.sh"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 300s
+      start_period: 600s
     volumes:
       - ./data/nextcloud:/var/www/html
       - ./idea-files-entrypoint.sh:/idea-files-entrypoint.sh:ro
@@ -142,6 +163,9 @@ services:
       # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
       - ./data/backup/db:/idea-backup-db:ro
       - ./hooks/app-healthcheck.sh:/idea/app-healthcheck.sh:ro
+      # x-app.update.prepare / settle (Axle contract). Whole hooks dir so the one-off
+      # Prepare run and the running Settle exec both see the scripts at /idea/hooks/.
+      - ./hooks:/idea/hooks:ro
     # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import
     # (MariaDB's temporary init server has no TCP) has finished before Nextcloud starts.
     depends_on:
@@ -197,7 +221,7 @@ services:
     #image: mariadb
     image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
-      x-app-version: "1.8-31.0.14"
+      x-app-version: "2.0-32.0.15"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -237,7 +261,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "1.8-31.0.14"
+      x-app-version: "2.0-32.0.15"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
