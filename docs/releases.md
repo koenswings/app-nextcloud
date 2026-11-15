@@ -5,10 +5,70 @@ Kits get a release only through Engine `updateApp` (idea#374). Until a Nextcloud
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
 
+## 5.0-35.0.3
+
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
+reserved). No image publish, no tag. Stacked on the 4.0-34.0.6 draft; last hop of the
+31 → 35 path.
+
+- **Nextcloud major hop:** official `library/nextcloud` `34.0.6-apache` → `35.0.3-apache`
+  (latest 35.0.x as of 2026-11-15; nextcloud/server `v35.0.3`, 2026-11-12). App major
+  4.0 → 5.0. Bundle name `nextcloud-5.0-35.0.3`. `x-app.updatesFrom: [4]` (repo
+  convention: a list of App majors; 4 covers the 4.x line including 4.0-34.0.6). 5.0 does
+  not list 3, 2 or 1: Nextcloud cannot skip majors, so a jump from Nextcloud 33, 32 or 31
+  to 35 would be refused. Each hop of the chained path still has to pass `updatesFrom` on
+  its own.
+- **Images:** `nextcloud-app` is pinned to the upstream multi-platform index
+  `nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3`
+  (`linux/arm64` variant v8 is in the index, platform manifest
+  `sha256:1059f89e8a1a78fbce4f88d358b6eaf20c32d3a47f67b049ec53fe588ab4be6d`; PHP 8.5.12).
+  The usual IDEA retag `koenswings/nextcloud:5.0-35.0.3` is not published yet (needs Koen
+  YES). check-compose and the Engine pin check (`saveName()`, idea#322) require
+  `repo:tag@sha256:<64 hex>`, so the compose uses the published official tag+index digest
+  until the retag exists and the pin is swapped. CODE
+  (`koenswings/nextcloud-code:1.0-24.04.13.2`) is unchanged since 1.2.
+- **PHP:** Nextcloud 35 drops PHP 8.2 (supported 8.3–8.5, 8.5 recommended). The official
+  image ships PHP 8.5.12, and richdocuments 12.0.2 needs PHP ≥ 8.3. Nothing for the App to
+  change.
+- **bundled apps:** `richdocuments` 12.0.2 (`info.xml` min-version 35, max-version 35;
+  official `nextcloud-releases/richdocuments` asset, sha256
+  `5deacee4fa1bb8eb7068e86c6dadbdaf0e44f8c79df0298a2254f562e3ed949b`, same as the GitHub
+  asset digest). `idea_usage` stays 1.0.0 with the Nextcloud range widened to min-version
+  31, max-version 35 (a version bump is decided at release). 11.1.3 is not shipped: a fresh
+  35 install would otherwise extract the 34-only tarball first. `files_external` is still a
+  shipped app in `v35.0.3`. All 16 `OCP\` classes that `idea_usage` imports still exist in
+  `lib/public` at `v35.0.3` (desk check at class level only; method-level use is part of
+  the Pi proof).
+- **Prepare / verify / work / settle:** unchanged from 4.0 (`x-app.update.prepare`,
+  `x-app.update.verify`, `x-app.update.work`, `x-app.update.settle`; same scripts, users,
+  timeouts and interval). `hooks/update-targets` gains `5.0-35.0.3  12.0.2  1.0.0`, and
+  verify expects richdocuments 12.0.2 and idea_usage 1.0.0 enabled.
+- **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
+  Re-measure on a pool Pi before locking the release.
+
+**Migration:** Nextcloud's own database upgrade on the first start of 5.0 (34.0.6 →
+35.0.3), after Prepare has staged the new apps. Files and accounts are kept.
+Nextcloud is in maintenance mode until the upgrade has finished. MariaDB and CODE
+are unchanged.
+
+**Database:** no database image upgrade in this release. MariaDB stays
+`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404` (idea#548 Q9: the MariaDB 11.8
+upgrade is a separate release, app-nextcloud#31). Nextcloud 35 dropped MariaDB 10.6 and
+lists 10.11 / 11.4 / 11.8 / 12.3 as supported ("Upgrade to Nextcloud 35" admin manual).
+11.7 is not on that list, but it is inside the Nextcloud 35 setup-check range
+MariaDB 10.11–12.3 (`SupportedDatabase.php` at `v35.0.3`), so this is a supported-list
+gap, not a version refusal. Whether the 11.8 release must land before 5.0 is an open
+question for the Lead (idea#548 §8.2 says 11.8 lands before 35).
+
+**Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
+pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
+is left at the 1.7 value (cba91a6) until that proof.
+
 ## 4.0-34.0.6
 
 **DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
-reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft.
+reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft. The live tree on
+this branch is now 5.0-35.0.3; this section is the 4.0 hop that 5.0 updates from.
 
 - **Nextcloud major hop:** official `library/nextcloud` `33.0.11-apache` → `34.0.6-apache`
   (latest 34.0.x as of 2026-11-15). App major 3.0 → 4.0. Bundle name `nextcloud-4.0-34.0.6`.

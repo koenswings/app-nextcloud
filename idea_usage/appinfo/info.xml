@@ -19,6 +19,6 @@ The App Disk usage hook reads the table for `appsOpened`. This app has no UI.]]>
 	<bugs>https://github.com/koenswings/idea/issues/464</bugs>
 	<repository type="git">https://github.com/koenswings/app-nextcloud.git</repository>
 	<dependencies>
-		<nextcloud min-version="31" max-version="34"/>
+		<nextcloud min-version="31" max-version="35"/>
 	</dependencies>
 </info>
