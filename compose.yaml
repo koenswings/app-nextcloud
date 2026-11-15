@@ -15,7 +15,7 @@ x-app:
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # 1.x used 300 s (~4x the measured 30.0.6 -> 31.0.1 first start of 66-69 s on idea04,
   # 2026-10-28). 2.0 is a Nextcloud major (31 -> 32): desk estimate 600 s until a pool
-  # Pi times this hop (hop-32-prep.md §8). healthCheck is the updateApp Health-step
+  # Pi times this hop (idea#548 §8.1). healthCheck is the updateApp Health-step
   # probe (HTTP 2xx/3xx and this expect). It stays stricter than the Docker healthcheck,
   # which also accepts maintenance during an IDEA backup only (app-nextcloud#29).
   healthCheck:
@@ -31,7 +31,7 @@ x-app:
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
     Before that start, x-app.update.prepare stages richdocuments 9.2.3 and idea_usage
     (Nextcloud 31-32) into custom_apps.
-  # Engine update hooks (Axle addendum, 2026-11-15; proposal not approved).
+  # Engine update hooks (Axle addendum, 2026-11-15; idea#548 merged).
   # Step order after Swap: prepare → Start → Health → verify → work → settle.
   # prepare and verify failures roll back; work and settle failures never roll
   # back (the path stops with migrationsPending). Fields: prepare/verify/work
@@ -148,7 +148,7 @@ networks:
 services:
   nextcloud-app:
     #image: nextcloud
-    # Publish pending (Koen YES on #375): retag this upstream index to
+    # Publish pending (Koen YES): retag this upstream index to
     # koenswings/nextcloud:2.0-32.0.15 and swap the pin. Official
     # library/nextcloud 32.0.15-apache multi-platform index (linux/arm64 is in it).
     # check-compose and Engine saveName() require repo:tag@sha256:<64 hex>

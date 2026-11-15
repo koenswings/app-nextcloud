@@ -120,6 +120,8 @@ it('release notes mark 2.0-32.0.15 as DRAFT and keep 1.8-31.0.14', () => {
   assert.match(notes, /x-app\.update\.verify/)
   assert.match(notes, /x-app\.update\.work/)
   assert.match(notes, /x-app\.update\.settle/)
+  assert.match(notes, /\*\*Database:\*\* no database image upgrade in this release/, '2.0: DB change stated explicitly (none)')
+  assert.match(notes, /Pi proof\s+pending \(pool\s+reserved/)
   assert.match(notes, /^## 1\.8-31\.0\.14$/m)
   assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), 'skeleton config still ships')
 })

@@ -7,8 +7,8 @@ index; MariaDB and CODE stay on the same pins as 1.2.
 
 ## 2.0-32.0.15
 
-**DRAFT** (pending the app-nextcloud#32 proposal). Local prep only: no push, no PR, no
-image publish, no Pi proof.
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
+reserved). No image publish, no tag.
 
 - **Nextcloud major hop:** official `library/nextcloud` `31.0.14-apache` → `32.0.15-apache`
   (latest 32.0.x as of 2026-11-15). App major 1.8 → 2.0. Bundle name `nextcloud-2.0-32.0.15`.
@@ -18,8 +18,7 @@ image publish, no Pi proof.
   `nextcloud:32.0.15-apache@sha256:db18aaa3a58302d7363dc59905c310f6df5141800bc8f336ab9cdec5577c6211`
   (`linux/arm64` variant v8 is in the index, platform manifest
   `sha256:3c169716aff4acde4f809c0c522d9c0b95c15b86832685614fe7909adbe6c17f`). The usual IDEA
-  retag `koenswings/nextcloud:2.0-32.0.15` is not published yet (needs Koen YES; already
-  on #375). check-compose and the Engine pin check (`saveName()`, idea#322) require
+  retag `koenswings/nextcloud:2.0-32.0.15` is not published yet (needs Koen YES). check-compose and the Engine pin check (`saveName()`, idea#322) require
   `repo:tag@sha256:<64 hex>` — a digest-only pin and an unpublished placeholder are both
   refused — so the compose uses the published official tag+index digest until the retag
   exists and the pin is swapped. MariaDB
@@ -59,9 +58,14 @@ image publish, no Pi proof.
 Nextcloud is in maintenance mode until the upgrade has finished. MariaDB and CODE
 are unchanged.
 
-**Tested:** Pi proof pending (needs a free pool Pi and the Engine Prepare step).
-`engine_tested` is left at the 1.7 value (cba91a6) until that proof. The #32
-proposal is not approved; this entry is a draft.
+**Database:** no database image upgrade in this release. MariaDB stays
+`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404` (idea#548 Q9: the MariaDB 11.8
+upgrade is a separate release, app-nextcloud#31). Nextcloud 32's setup check accepts
+MariaDB 10.6–11.8; only Nextcloud's own schema upgrade runs.
+
+**Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
+pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
+is left at the 1.7 value (cba91a6) until that proof.
 
 ## 1.8-31.0.14
 
