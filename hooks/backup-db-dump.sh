@@ -8,7 +8,8 @@
 #
 # Writes a consistent logical dump of the Nextcloud database to
 #   /docker-entrypoint-initdb.d/nextcloud.sql   (host: <instance>/data/backup/db/)
-# plus nextcloud.sql.id (one line, unique per dump). The hook archive excludes
+# plus nextcloud.sql.id (one line, unique per dump) and the import markers
+# 00-idea-import-begin.sh / zz-idea-import-end.sh (see below). The hook archive excludes
 # data/db (hookExclude), so a restored instance has an empty datadir and the
 # official MariaDB entrypoint imports this dump on its first start.
 #
@@ -25,18 +26,24 @@ DB="${MYSQL_DATABASE:-nextcloud}"
 OUT="$DIR/nextcloud.sql"
 TMP="$DIR/.nextcloud.sql.tmp"
 ID="$DIR/nextcloud.sql.id"
+# Import markers (Axle, app-nextcloud#27 point 3): MariaDB's entrypoint runs initdb files in glob
+# order, so these run just before and just after nextcloud.sql on a restore. A broken import
+# (power cut, full disk, OOM, bad statement) leaves data/db/.idea-import-pending, and the db
+# healthcheck stays unhealthy on it, so Nextcloud never starts on a half-imported database.
+BEGIN="$DIR/00-idea-import-begin.sh"
+END="$DIR/zz-idea-import-end.sh"
 
 log() { echo "backup-db-dump: $*" >&2; }
 
 [ -d "$DIR" ] || { log "no dump folder $DIR (compose bind ./data/backup/db missing)"; exit 1; }
 [ -n "${MYSQL_ROOT_PASSWORD:-}" ] || { log "MYSQL_ROOT_PASSWORD is not set"; exit 1; }
 
-cleanup() { rm -f "$TMP"; }
+cleanup() { rm -f "$TMP" "$BEGIN.tmp" "$END.tmp"; }
 trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
 # An older dump is never kept next to a new one: the import must not see two.
-rm -f "$OUT" "$ID"
+rm -f "$OUT" "$ID" "$BEGIN" "$END"
 
 MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mariadb-dump -uroot \
 	--single-transaction --quick --routines --triggers --hex-blob \
@@ -47,6 +54,19 @@ tail -n 1 "$TMP" | grep -q '^-- Dump completed' || { log "dump is incomplete"; e
 # Nextcloud's own tables must be in it (oc_ prefix is the Nextcloud default).
 # shellcheck disable=SC2016 # literal backticks
 grep -q '^CREATE TABLE `oc_filecache`' "$TMP" || { log "dump has no oc_filecache table"; exit 1; }
+
+# Sourced (not executable) by the MariaDB entrypoint, where DATADIR is the data dir.
+cat > "$BEGIN.tmp" <<'MARK'
+# idea#403 (written by backup-db-dump.sh): the dump import starts; zz-idea-import-end.sh clears it.
+touch "${DATADIR:-/var/lib/mysql}/.idea-import-pending"
+MARK
+cat > "$END.tmp" <<'MARK'
+# idea#403 (written by backup-db-dump.sh): the dump import ended without an error.
+rm -f "${DATADIR:-/var/lib/mysql}/.idea-import-pending"
+MARK
+chmod 644 "$BEGIN.tmp" "$END.tmp"
+mv "$BEGIN.tmp" "$BEGIN"
+mv "$END.tmp" "$END"
 
 sync "$TMP" 2>/dev/null || sync
 mv "$TMP" "$OUT"

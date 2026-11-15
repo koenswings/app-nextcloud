@@ -185,7 +185,9 @@ services:
     # skip-networking, so the db only turns healthy after the import. start_period 900 s covers a
     # large import on a Pi.
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      # A restore whose dump import broke leaves data/db/.idea-import-pending (backup-db-dump.sh
+      # markers): stay unhealthy so Nextcloud never starts on a half-imported database.
+      test: ["CMD-SHELL", "[ ! -e /var/lib/mysql/.idea-import-pending ] && healthcheck.sh --connect --innodb_initialized"]
       interval: 5s
       timeout: 5s
       retries: 6

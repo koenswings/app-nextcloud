@@ -4,7 +4,7 @@
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, chmodSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -49,7 +49,7 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
   assert.match(compose, /- \.\/hooks\/backup-db-dump\.sh:\/idea\/backup\/db-dump\.sh:ro/)
   assert.match(compose, /- \.\/hooks\/backup-db-clean\.sh:\/idea\/backup\/db-clean\.sh:ro/)
   assert.match(compose, /- \.\/data\/backup\/db:\/idea-backup-db:ro/)
-  assert.match(compose, /test: \["CMD", "healthcheck\.sh", "--connect", "--innodb_initialized"\]/)
+  assert.match(compose, /test: \["CMD-SHELL", "\[ ! -e \/var\/lib\/mysql\/\.idea-import-pending \] && healthcheck\.sh --connect --innodb_initialized"\]/)
   assert.match(compose, /- MARIADB_AUTO_UPGRADE=1\n/, 'healthcheck user on existing data dirs')
   assert.doesNotMatch(compose, /mariadb-admin|healthcheck.*PASS|--password/, 'no credential-less ping, no password in compose')
   assert.match(compose, /depends_on:\n      nextcloud-db:\n        condition: service_healthy/)
@@ -59,7 +59,7 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
 it('dump: writes nextcloud.sql + id, password only via MYSQL_PWD, never printed', () => {
   const r = run(DUMP)
   assert.equal(r.status, 0, r.stderr)
-  assert.deepEqual(readdirSync(out).sort(), ['nextcloud.sql', 'nextcloud.sql.id'])
+  assert.deepEqual(readdirSync(out).sort(), ['00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
   assert.match(readFileSync(join(out, 'nextcloud.sql'), 'utf8'), /-- Dump completed on/)
   assert.match(readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'), /^\d{8}T\d{6}Z-[0-9a-f-]{36}\n$/)
   const argv = readFileSync(join(dir, 'dump-argv'), 'utf8')
@@ -75,6 +75,24 @@ it('dump: a failed or truncated dump exits non-zero and leaves no nextcloud.sql 
     assert.deepEqual(readdirSync(out), [], mode)
     assert.ok(!(r.stdout + r.stderr).includes(SECRET))
   }
+})
+
+it('dump: import markers run around nextcloud.sql in initdb glob order; a broken import leaves .idea-import-pending', () => {
+  assert.equal(run(DUMP).status, 0)
+  // MariaDB's docker_process_init_files: for f in /docker-entrypoint-initdb.d/*  (C sort; *.id is ignored)
+  const order = spawnSync('sh', ['-c', 'cd "$1" && for f in *; do echo "$f"; done', 'sh', out], { encoding: 'utf8', env: { LC_ALL: 'C', PATH: process.env.PATH } }).stdout.trim().split('\n')
+  assert.deepEqual(order, ['00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
+  const datadir = join(dir, 'datadir'); mkdirSync(datadir)
+  const src = (f) => spawnSync('sh', ['-c', '. "$1"', 'sh', join(out, f)], { encoding: 'utf8', env: { PATH: process.env.PATH, DATADIR: datadir } })
+  const pending = join(datadir, '.idea-import-pending')
+  assert.equal(src('00-idea-import-begin.sh').status, 0); assert.ok(existsSync(pending), 'begin marks pending')
+  // Import fails half-way: the entrypoint stops, zz-idea-import-end.sh never runs, the marker stays.
+  assert.ok(existsSync(pending))
+  assert.equal(src('zz-idea-import-end.sh').status, 0); assert.ok(!existsSync(pending), 'end clears pending')
+  // Not executable: the entrypoint sources them (DATADIR in scope).
+  for (const f of ['00-idea-import-begin.sh', 'zz-idea-import-end.sh']) assert.equal(statSync(join(out, f)).mode & 0o111, 0, f)
+  // clean removes the markers with the dump.
+  assert.equal(run(CLEAN).status, 0); assert.deepEqual(readdirSync(out), [])
 })
 
 it('dump: missing password or dump folder fails closed', () => {

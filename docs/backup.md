@@ -12,7 +12,7 @@ from the instance folder: no shell and no extra env. `hookTimeout` (600 s) appli
 | Step | Service | Command | Does |
 |------|---------|---------|------|
 | preHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --on` | No writes from the web UI, WebDAV or background jobs |
-| preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id`) |
+| preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
 | *borg* | — | instance folder minus `data/db` (`hookExclude`) | |
 | postHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --off` | Idempotent |
 | postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the three dump files; idempotent |
@@ -65,6 +65,22 @@ entrypoint imports `*.sql` from there **only when the datadir is empty**, so on 
    Once per dump id: no marker means try again. A crash, failed scan or timeout leaves no
    marker, and the next start clears a leftover `.running` and tries again. The hook always exits 0.
 4. **Fallback or cold archive** (`data/db` present): a normal start; any dump in the archive is ignored.
+
+### A broken import fails closed
+
+Next to the dump, `db-dump.sh` writes two small initdb files that MariaDB's entrypoint sources
+in glob order around `nextcloud.sql`: `00-idea-import-begin.sh` creates
+`data/db/.idea-import-pending`, `zz-idea-import-end.sh` removes it. `db-clean.sh` removes both
+with the dump. If the import stops part-way (power cut, full disk, OOM, a bad statement), the
+first start exits with the error and the marker stays. On the next start MariaDB sees an
+existing database and does not import again, but the db healthcheck
+(`[ ! -e /var/lib/mysql/.idea-import-pending ] && healthcheck.sh …`) refuses, so the db never
+turns healthy, Nextcloud (`depends_on: service_healthy`) never starts on the partial database,
+and the start ends in Error once `start_period` (900 s) and the retries are used up.
+
+**A pending marker means the import broke: move `data/db` aside and start again** (the dump in
+`data/backup/db` is imported into the new empty datadir). The markers do nothing on a normal
+start or during a live backup: initdb files only run on an empty datadir.
 
 ## verify
 

@@ -15,6 +15,8 @@ same pinned images, so no image is rebuilt or republished.
   `MARIADB_AUTO_UPGRADE=1`, which creates the healthcheck user on an existing data dir, and
   `depends_on: service_healthy` on `nextcloud-app`. New `before-starting/00-idea-restore.sh`:
   maintenance off before Apache, then a detached `files:scan --all` once Apache answers, once per dump.
+  A broken dump import fails closed: initdb markers leave `data/db/.idea-import-pending` and the db
+  healthcheck stays unhealthy on it (move `data/db` aside and start again).
 - **Images** unchanged since 1.2 (same digests).
 
 **Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder,
