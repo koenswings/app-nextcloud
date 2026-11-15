@@ -1,11 +1,12 @@
 /**
  * Unit tests for hooks/settle-update.sh. No Docker: fake curl + OCC.
- * Exit 0 settled, 3 not yet, other error.
+ * Exit 0 settled, 3 not yet, other error. Read-only: no cron.php.
+ * App version checks live in verify, not here.
  * Run: node --test tests/
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,17 +14,10 @@ import { spawnSync } from 'node:child_process'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPT = join(root, 'hooks/settle-update.sh')
-const READY = '{"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"32.0.15.1"}'
+const READY = '{"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"x"}'
 const MAINT = '{"installed":true,"maintenance":true,"needsDbUpgrade":false}'
 const NEEDDB = '{"installed":true,"maintenance":false,"needsDbUpgrade":true}'
 const NOTINST = '{"installed":false,"maintenance":false,"needsDbUpgrade":false}'
-const APPLIST = `Enabled:
-  - activity: 4.0.0
-  - idea_usage: 1.0.0
-  - richdocuments: 9.2.3
-Disabled:
-  - firstrunwizard: 9.0.0
-`
 let dir, bin, occ
 
 beforeEach(() => {
@@ -47,30 +41,43 @@ done
 printf '%s' "\${IDEA_HC_CODE:-200}"
 exit 0
 `)
-  chmodSync(join(bin, 'curl'), 0o755)
+  spawnSync('chmod', ['755', join(bin, 'curl')])
   occ = join(dir, 'occ')
   writeFileSync(occ, `#!/bin/sh
-if [ "\$IDEA_OCC_FAIL" = 1 ]; then exit 1; fi
-printf '%s' "\$IDEA_OCC_LIST"
-exit 0
+if [ "$1" = "background-job:list" ]; then
+  if [ "$IDEA_JOBS_MISSING" = 1 ]; then
+    echo 'Command "background-job:list" is not defined.' >&2
+    exit 1
+  fi
+  if [ "$IDEA_JOBS_FAIL" = 1 ]; then
+    echo 'occ failed' >&2
+    exit 1
+  fi
+  if [ "$IDEA_JOBS_PENDING" = 1 ]; then
+    echo "  12  OC\\\\Migration\\\\BackgroundRepair  0  []"
+    exit 0
+  fi
+  echo "  3  OCA\\\\Activity\\\\BackgroundJob\\\\ExpireActivities  1  []"
+  exit 0
+fi
+exit 1
 `)
-  chmodSync(occ, 0o755)
+  spawnSync('chmod', ['755', occ])
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-const run = (env = {}) => spawnSync(SCRIPT, [], {
+const run = (env = {}, args = []) => spawnSync(SCRIPT, args, {
   encoding: 'utf8',
   env: {
     PATH: `${bin}:${process.env.PATH}`,
     OCC: occ,
     IDEA_NC_HEALTH_URL: 'http://127.0.0.1/status.php',
     IDEA_HC_BODY: READY,
-    IDEA_OCC_LIST: APPLIST,
     ...env,
   },
 })
 
-it('exit 0 when status.php is ready and both apps are enabled at the target versions', () => {
+it('exit 0 when status.php is ready and no upgrade jobs are pending', () => {
   const r = run()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.match(r.stdout, /settled/)
@@ -79,31 +86,50 @@ it('exit 0 when status.php is ready and both apps are enabled at the target vers
 it('exit 3 when status.php is unreachable or in maintenance or needs a DB upgrade', () => {
   let r = run({ IDEA_CURL_FAIL: '1' })
   assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /not yet: status.php unreachable/)
   r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
   assert.equal(r.status, 3, r.stdout + r.stderr)
   r = run({ IDEA_HC_BODY: MAINT })
   assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /not yet: status.php maintenance is not false/)
   r = run({ IDEA_HC_BODY: NEEDDB })
   assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /not yet: status.php needsDbUpgrade is not false/)
 })
 
-it('exit 1 when installed is false or an app is missing, disabled, or the wrong version', () => {
-  let r = run({ IDEA_HC_BODY: NOTINST })
+it('exit 1 when installed is false', () => {
+  const r = run({ IDEA_HC_BODY: NOTINST })
   assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, /installed is not true/)
-  r = run({ IDEA_OCC_LIST: 'Enabled:\n  - idea_usage: 1.0.0\nDisabled:\n  - richdocuments: 9.2.3\n' })
-  assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, /richdocuments 9\.2\.3 is not enabled/)
-  r = run({ IDEA_OCC_LIST: 'Enabled:\n  - richdocuments: 8.8.3\n  - idea_usage: 1.0.0\nDisabled:\n' })
-  assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, /richdocuments 9\.2\.3 is not enabled/)
-  r = run({ IDEA_OCC_LIST: 'Enabled:\n  - richdocuments: 9.2.3\nDisabled:\n  - idea_usage: 1.0.0\n' })
-  assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, /idea_usage 1\.0\.0 is not enabled/)
+  assert.match(r.stdout, /ERROR: status.php installed is not true/)
 })
 
-it('exit 3 when occ app:list fails (transient)', () => {
-  const r = run({ IDEA_OCC_FAIL: '1' })
+it('exit 3 when upgrade jobs are still pending', () => {
+  const r = run({ IDEA_JOBS_PENDING: '1' })
   assert.equal(r.status, 3, r.stdout + r.stderr)
-  assert.match(r.stdout, /occ app:list failed/)
+  assert.match(r.stdout, /not yet: upgrade jobs still pending/)
+})
+
+it('exit 0 when the job probe is unavailable, if status.php is ready', () => {
+  const r = run({ IDEA_JOBS_MISSING: '1' })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /upgrade-job probe unavailable/)
+  assert.match(r.stdout, /settled/)
+})
+
+it('exit 3 when the job probe fails for another reason', () => {
+  const r = run({ IDEA_JOBS_FAIL: '1' })
+  assert.equal(r.status, 3, r.stdout + r.stderr)
+  assert.match(r.stdout, /not yet: upgrade-job probe failed/)
+})
+
+it('does not invoke cron.php (settle is read-only)', () => {
+  const src = spawnSync('cat', [SCRIPT], { encoding: 'utf8' }).stdout
+  const body = src.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+  assert.ok(!/cron\.php/.test(body), 'settle must not invoke cron.php')
+})
+
+it('refuses leftover argv', () => {
+  const r = run({}, ['apache2-foreground'])
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /ERROR: unexpected arguments: apache2-foreground/)
 })
