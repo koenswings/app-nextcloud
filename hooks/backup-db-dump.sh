@@ -17,8 +17,9 @@
 # handed to mariadb-dump through MYSQL_PWD; it is never printed or put on argv.
 #
 # Exit 0 = dump written and complete. Any other exit = the Engine treats the
-# preHook as failed: postHook runs (maintenance off, dump, id and markers removed), then the
-# fallback (stop) or fail. A partial dump is never left as nextcloud.sql.
+# preHook as failed: postHook runs (maintenance off, dump, id, import markers and the
+# backup-pending marker removed), then the fallback (stop) or fail. A partial dump is
+# never left as nextcloud.sql.
 set -eu
 
 DIR="${IDEA_BACKUP_DB_DIR:-/docker-entrypoint-initdb.d}"
@@ -32,6 +33,11 @@ ID="$DIR/nextcloud.sql.id"
 # healthcheck stays unhealthy on it, so Nextcloud never starts on a half-imported database.
 BEGIN="$DIR/00-idea-import-begin.sh"
 END="$DIR/zz-idea-import-end.sh"
+# app-nextcloud#29: app healthcheck treats maintenance as alive only while this exists.
+# Hidden, so MariaDB initdb (`for f in *`) never sources it. Written just before the dump
+# so the dump and borg window are covered; the few seconds after maintenance:on and before
+# this script starts are well under the 45 s Docker retry budget. db-clean.sh removes it.
+MARKER="$DIR/.idea-backup-pending"
 
 log() { echo "backup-db-dump: $*" >&2; }
 
@@ -44,6 +50,8 @@ trap 'exit 1' INT TERM HUP
 
 # An older dump is never kept next to a new one: the import must not see two.
 rm -f "$OUT" "$ID" "$BEGIN" "$END"
+
+touch "$MARKER" || { log "cannot write backup marker $MARKER"; exit 1; }
 
 MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mariadb-dump -uroot \
 	--single-transaction --quick --routines --triggers --hex-blob \

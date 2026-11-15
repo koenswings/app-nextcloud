@@ -49,6 +49,9 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
   assert.match(compose, /- \.\/hooks\/backup-db-dump\.sh:\/idea\/backup\/db-dump\.sh:ro/)
   assert.match(compose, /- \.\/hooks\/backup-db-clean\.sh:\/idea\/backup\/db-clean\.sh:ro/)
   assert.match(compose, /- \.\/data\/backup\/db:\/idea-backup-db:ro/)
+  assert.match(compose, /- \.\/hooks\/app-healthcheck\.sh:\/idea\/app-healthcheck\.sh:ro/)
+  assert.match(compose, /test: \["CMD", "\/idea\/app-healthcheck\.sh"\]/)
+  assert.match(compose, /healthCheck:\n    path: \/status\.php\n    expect: '"maintenance":false,"needsDbUpgrade":false'/)
   assert.match(compose, /test: \["CMD-SHELL", "\[ ! -e \/var\/lib\/mysql\/\.idea-import-pending \] && healthcheck\.sh --connect --innodb_initialized"\]/)
   assert.match(compose, /- MARIADB_AUTO_UPGRADE=1\n/, 'healthcheck user on existing data dirs')
   assert.doesNotMatch(compose, /mariadb-admin|healthcheck.*PASS|--password/, 'no credential-less ping, no password in compose')
@@ -59,7 +62,8 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
 it('dump: writes nextcloud.sql + id, password only via MYSQL_PWD, never printed', () => {
   const r = run(DUMP)
   assert.equal(r.status, 0, r.stderr)
-  assert.deepEqual(readdirSync(out).sort(), ['00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
+  assert.deepEqual(readdirSync(out).sort(), ['.idea-backup-pending', '00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
+  assert.ok(statSync(join(out, '.idea-backup-pending')).isFile())
   assert.match(readFileSync(join(out, 'nextcloud.sql'), 'utf8'), /-- Dump completed on/)
   assert.match(readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'), /^\d{8}T\d{6}Z-[0-9a-f-]{36}\n$/)
   const argv = readFileSync(join(dir, 'dump-argv'), 'utf8')
@@ -72,7 +76,9 @@ it('dump: a failed or truncated dump exits non-zero and leaves no nextcloud.sql 
     writeFileSync(join(out, 'nextcloud.sql'), 'old'); writeFileSync(join(out, 'nextcloud.sql.id'), 'old\n')
     const r = run(DUMP, { FAKE_DUMP: mode })
     assert.notEqual(r.status, 0, mode)
-    assert.deepEqual(readdirSync(out), [], mode)
+    // The backup-pending marker stays until postHook db-clean.sh, so the app healthcheck
+    // still treats maintenance as alive until postHook runs.
+    assert.deepEqual(readdirSync(out), ['.idea-backup-pending'], mode)
     assert.ok(!(r.stdout + r.stderr).includes(SECRET))
   }
 })
@@ -100,7 +106,7 @@ it('dump: missing password or dump folder fails closed', () => {
   assert.equal(run(DUMP, { IDEA_BACKUP_DB_DIR: join(dir, 'nope') }).status, 1)
 })
 
-it('clean: removes only the dump, its id and the import markers, idempotent', () => {
+it('clean: removes only the dump, its id, the import markers and the backup-pending marker, idempotent', () => {
   assert.equal(run(DUMP).status, 0)
   writeFileSync(join(out, 'keep.txt'), 'x')
   assert.equal(run(CLEAN).status, 0)

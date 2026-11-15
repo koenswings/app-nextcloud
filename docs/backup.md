@@ -1,6 +1,6 @@
 # Live backup (`x-app.backup` method `hook`, idea#403)
 
-Nextcloud 1.6 is backed up while it runs. The Engine contract is
+Nextcloud 1.7 is backed up while it runs. The Engine contract is
 [agent-engine-dev#404](https://github.com/koenswings/agent-engine-dev/pull/404); the App-author
 contract is `docs/backup-hook.md` in agent-app-dev.
 
@@ -12,10 +12,10 @@ from the instance folder: no shell and no extra env. `hookTimeout` (600 s) appli
 | Step | Service | Command | Does |
 |------|---------|---------|------|
 | preHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --on` | No writes from the web UI, WebDAV or background jobs |
-| preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
+| preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | Writes `.idea-backup-pending`, then `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
 | *borg* | — | instance folder minus `data/db` (`hookExclude`) | |
 | postHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --off` | Idempotent |
-| postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the dump (`nextcloud.sql`), its id (`nextcloud.sql.id`) and the two import markers (`00-idea-import-begin.sh`, `zz-idea-import-end.sh`), plus their temp files; idempotent |
+| postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the dump (`nextcloud.sql`), its id (`nextcloud.sql.id`), the two import markers (`00-idea-import-begin.sh`, `zz-idea-import-end.sh`), the backup-pending marker, plus their temp files; idempotent |
 
 Pre steps stop at the first failure. Every post step always runs: after a failed pre step, after a
 failed earlier post step and after a failed borg run. So maintenance mode is switched off even when
@@ -24,6 +24,34 @@ the dump fails. Nextcloud is in maintenance mode for the whole run (pre, borg, p
 A failed pre step (any non-zero exit or a timeout): postHook, then `fallback: stop` (a normal
 stop/start backup with `data/db`, result `HOOK_FALLBACK`). updateApp's pre-update backup forces
 `fail` (idea#448). A stopped instance gets a cold backup: hooks are skipped, `data/db` is kept.
+
+## Healthcheck during the backup window (app-nextcloud#29)
+
+`status.php` returns HTTP 503 with `"maintenance":true` while maintenance is on, so the old
+`curl -f` healthcheck failed for the whole window. With interval 15 s and 3 retries, a dump+borg
+run longer than about 45 s (a large database or a slow Backup Disk) would mark `nextcloud-app`
+unhealthy mid-backup.
+
+The Docker healthcheck (`hooks/app-healthcheck.sh`, mounted at `/idea/app-healthcheck.sh`) now
+treats that window as alive, but only while the backup marker exists:
+
+- HTTP 200 and a body containing `"maintenance":false,"needsDbUpgrade":false`: healthy (ready).
+- HTTP 503, a body containing `"maintenance":true`, and `data/backup/db/.idea-backup-pending`
+  (bound read-only at `/idea-backup-db` in the app container): healthy (backup in progress).
+  `db-dump.sh` writes the marker just before the dump; `db-clean.sh` removes it (every postHook
+  step always runs, so a failed dump or a failed `maintenance:mode --off` still clears it).
+- Anything else, including maintenance with no marker (a failed postHook that left maintenance
+  on, or a manual `occ maintenance:mode --on`): unhealthy.
+
+The brief gap after `maintenance:mode --on` and before `db-dump.sh` starts (and writes the
+marker) is a few seconds, well under the 45 s retry budget. The marker is hidden
+(`.idea-backup-pending`) so MariaDB initdb never sources it.
+
+`x-app.healthCheck` is unchanged. After start or restore the Engine's port-ready check
+(`assertInstancePortReady`) already accepts any HTTP status, including Nextcloud's 503.
+updateApp's Health step waits until Docker is up and then probes `x-app.healthCheck`, which
+still requires HTTP 2xx/3xx and `"maintenance":false,"needsDbUpgrade":false`, so an upgrade
+still in maintenance does not pass.
 
 ## The dump
 
@@ -91,4 +119,5 @@ checks: `.env`, `data/nextcloud/config/config.php`, `data/nextcloud/version.php`
 ## Tests
 
 `node --test tests/*.test.mjs` (`tests/backup-hook.test.mjs`: compose block, dump/clean with a
-fake `mariadb-dump`, the restore hook with `tests/fake-occ-restore.mjs`).
+fake `mariadb-dump`, the restore hook with `tests/fake-occ-restore.mjs`;
+`tests/app-healthcheck.test.mjs`: ready, maintenance with and without the backup marker, and down).

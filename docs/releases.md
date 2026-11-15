@@ -4,6 +4,23 @@ Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>
 Kits get a release only through Engine `updateApp` (idea#374). Every release so far keeps the
 same pinned images, so no image is rebuilt or republished.
 
+## 1.7-31.0.1
+
+- **Healthcheck during backup** (app-nextcloud#29): the `nextcloud-app` Docker healthcheck treats
+  maintenance mode as alive only while an IDEA backup is in progress
+  (`data/backup/db/.idea-backup-pending`, written at the start of `db-dump.sh`, removed by
+  `db-clean.sh`). HTTP 200 with `"maintenance":false,"needsDbUpgrade":false` stays the ready
+  path; HTTP 503 with `"maintenance":true` is accepted only with that marker, so a failed
+  postHook or a manual `occ maintenance:mode --on` still goes unhealthy. `x-app.healthCheck` is
+  unchanged (updateApp still waits for maintenance off).
+- **Images** unchanged since 1.2 (same digests).
+
+**Migration:** none.
+
+**Tested:** `node --test tests/` on the box. A Pi check should still prove a hook backup whose
+dump+borg window exceeds about 45 s leaves `nextcloud-app` healthy, and that maintenance left on
+without the marker goes unhealthy.
+
 ## 1.6-31.0.1
 
 - **Live backup** (idea#403, agent-engine-dev#404): `x-app.backup` method `hook`, fallback `stop`,
