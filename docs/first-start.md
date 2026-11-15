@@ -10,7 +10,7 @@ The whole `docker-entrypoint-hooks.d/` folder is mounted read-only. Order on the
 
 0. `pre-installation/05-idea-skeleton-config.sh` — copy `config/idea-skeleton.config.php` (bind `./config:/idea-config:ro`) into Nextcloud's `config/` after the image has laid down its stock config files and **before** `maintenance:install`, so the install-time `admin` also gets an empty home (idea#464). Nextcloud merges every `config/*.config.php` over `config.php`, so `skeletondirectory` and `templatedirectory` stay empty while the file is in place. File copy only, no `occ`.
 1. `maintenance:install`
-2. `post-installation/20-idea-bundled-apps.sh` — extract App Disk apps (`bundled-apps/`, richdocuments 8.8.3 for NC 31 and `idea_usage` 1.0.0, sha256-checked) into `custom_apps/` when missing; never overwrites
+2. `post-installation/20-idea-bundled-apps.sh` — extract App Disk apps (`bundled-apps/`, richdocuments 9.2.3 for NC 32 and `idea_usage` 1.0.0 with Nextcloud 31–32, sha256-checked) into `custom_apps/` when missing; never overwrites. A 1.x → 2.0 hop uses `hooks/prep-custom-apps-for-upgrade.sh` (`x-app.update.prepare`) to replace those apps before `occ upgrade`.
 2b. `post-installation/25-idea-usage.sh` — enable `idea_usage` (the IDEA apps-opened counter, idea#464)
 2c. `post-installation/26-idea-skeleton.sh` — fallback (a start without the `./config` bind): set `skeletondirectory` and `templatedirectory` to empty, so a new user's first login copies no example files (idea#464). Nextcloud 31 copies stock templates independently of the skeleton, so both must be empty.
 2d. `post-installation/30-idea-office.sh` — enable richdocuments, point it at CODE (`IDEA_COLLABORA_URL`)
