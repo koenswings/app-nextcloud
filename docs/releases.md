@@ -7,10 +7,10 @@ index; MariaDB and CODE stay on the same pins as 1.2.
 
 ## 6.0-35.0.3
 
-**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
-reserved). No image publish, no tag. Stacked on the 5.0-34.0.6 draft (MariaDB 11.8); last hop of
-the 31 → 35 path. Renumbered from 5.0-35.0.3 once MariaDB 11.8 became its own 5.0 release
-(idea#548 Q9); the PR branch is still named `kid/nc-5.0`.
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). No image publish, no tag.
+Stacked on the 5.0-34.0.6 draft (MariaDB 11.8); last hop of the 31 → 35 path. Renumbered
+from 5.0-35.0.3 once MariaDB 11.8 became its own 5.0 release (idea#548 Q9); the PR branch
+is still named `kid/nc-5.0`.
 
 - **Nextcloud major hop:** official `library/nextcloud` `34.0.6-apache` → `35.0.3-apache`
   (latest 35.0.x as of 2026-11-15; nextcloud/server `v35.0.3`, 2026-11-12). App major
@@ -46,6 +46,14 @@ the 31 → 35 path. Renumbered from 5.0-35.0.3 once MariaDB 11.8 became its own 
   verify expects richdocuments 12.0.2 and idea_usage 1.0.0 enabled.
 - **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
   Re-measure on a pool Pi before locking the release.
+- **Engine floor:** 6.0 declares the same `x-app.update` stages, and it needs them:
+  `prepare` stages richdocuments 12.0.2 and idea_usage (max-version 35) before
+  `occ upgrade`. Engine 41ba677 (engine#463) and later refuse the bundle at Check
+  with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456 stages land (#456 L).
+  A run on the pool's pre-#463 Engine 80ba4af is not a field proof: without
+  `prepare`, `occ upgrade` disables Office and idea_usage on an offline kit.
+  The Pi proof waits for #456 L. Kits on an Engine older than 41ba677 must never
+  get Nextcloud 2.0+ bundles (agent-app-dev `docs/app-bundle-integrity.md`).
 
 **Migration:** Nextcloud's own database upgrade on the first start of 6.0 (34.0.6 →
 35.0.3), after Prepare has staged the new apps. Files and accounts are kept.
@@ -60,8 +68,9 @@ Nextcloud 35" admin manual); 11.8 is on that list and inside the setup-check ran
 MariaDB 10.11–12.3 (`SupportedDatabase.php` at `v35.0.3`).
 
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
-pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
-is left at the 1.7 value (cba91a6) until that proof.
+waits for #456 L (the full `x-app.update` stages). It cannot run on Engine 41ba677+,
+which refuses this bundle, and a stage-less run on 80ba4af is not a field proof.
+`engine_tested` is left at the 1.7 value (cba91a6) until that proof.
 
 ## 5.0-34.0.6
 

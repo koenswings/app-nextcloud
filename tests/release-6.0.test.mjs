@@ -126,7 +126,11 @@ it('release notes mark 6.0-35.0.3 as DRAFT and keep 5.0-34.0.6, 4.0-34.0.6, 3.0-
   assert.match(notes, /x-app\.update\.work/)
   assert.match(notes, /x-app\.update\.settle/)
   assert.match(notes, /\*\*Database:\*\* no change\. MariaDB stays on 11\.8\.9 from 5\.0-34\.0\.6/, '6.0: DB change stated explicitly (none, 11.8 kept)')
-  assert.match(notes, /Pi proof\s+pending \(pool\s+reserved/)
+  const section = notes.split(/^## /m).find(s => s.startsWith('6.0-35.0.3')) || ''
+  assert.match(section, /41ba677/, '6.0: Engine 41ba677+ refuses because stages are declared')
+  assert.match(section, /UPDATE_STAGES_UNSUPPORTED/)
+  assert.match(section, /is not a field proof/, '6.0: 80ba4af is not a field proof')
+  assert.match(section, /Pi proof waits for #456 L/)
   assert.match(notes, /updatesFrom: \[5\]/)
   assert.match(notes, /^## 5\.0-34\.0\.6$/m)
   assert.match(notes, /^## 4\.0-34\.0\.6$/m)
