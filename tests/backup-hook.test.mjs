@@ -42,13 +42,16 @@ const run = (script, env = {}) => spawnSync(script, [], { encoding: 'utf8',
 
 it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, db healthcheck, depends_on', () => {
   assert.match(compose, /^  backup:\n    method: hook\n    fallback: stop\n    hookTimeout: 600/m)
-  assert.match(compose, /preHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --on\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-dump\.sh\]/)
-  assert.match(compose, /postHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --off\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-clean\.sh\]/)
-  assert.match(compose, /hookExclude:\n      - data\/db /)
+  assert.match(compose, /preHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[touch, \/var\/www\/html\/data\/\.idea-backup-pending\]\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --on\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-dump\.sh\]/)
+  assert.match(compose, /postHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[rm, -f, \/var\/www\/html\/data\/\.idea-backup-pending\]\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --off\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-clean\.sh\]/)
+  assert.match(compose, /hookExclude:\n      - data\/db .*\n      - data\/nextcloud\/data\/\.idea-backup-pending/)
   assert.match(compose, /- \.\/data\/backup\/db:\/docker-entrypoint-initdb\.d\n/)
   assert.match(compose, /- \.\/hooks\/backup-db-dump\.sh:\/idea\/backup\/db-dump\.sh:ro/)
   assert.match(compose, /- \.\/hooks\/backup-db-clean\.sh:\/idea\/backup\/db-clean\.sh:ro/)
   assert.match(compose, /- \.\/data\/backup\/db:\/idea-backup-db:ro/)
+  assert.match(compose, /- \.\/hooks\/app-healthcheck\.sh:\/idea\/app-healthcheck\.sh:ro/)
+  assert.match(compose, /test: \["CMD", "\/idea\/app-healthcheck\.sh"\]/)
+  assert.match(compose, /healthCheck:\n    path: \/status\.php\n    expect: '"maintenance":false,"needsDbUpgrade":false'/)
   assert.match(compose, /test: \["CMD-SHELL", "\[ ! -e \/var\/lib\/mysql\/\.idea-import-pending \] && healthcheck\.sh --connect --innodb_initialized"\]/)
   assert.match(compose, /- MARIADB_AUTO_UPGRADE=1\n/, 'healthcheck user on existing data dirs')
   assert.doesNotMatch(compose, /mariadb-admin|healthcheck.*PASS|--password/, 'no credential-less ping, no password in compose')
@@ -100,7 +103,7 @@ it('dump: missing password or dump folder fails closed', () => {
   assert.equal(run(DUMP, { IDEA_BACKUP_DB_DIR: join(dir, 'nope') }).status, 1)
 })
 
-it('clean: removes only the dump, its id and the import markers, idempotent', () => {
+it('clean: removes only the dump, its id, the import markers and the backup-pending marker, idempotent', () => {
   assert.equal(run(DUMP).status, 0)
   writeFileSync(join(out, 'keep.txt'), 'x')
   assert.equal(run(CLEAN).status, 0)
@@ -111,6 +114,21 @@ it('clean: removes only the dump, its id and the import markers, idempotent', ()
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const until = async (f, ms = 8000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) return false; await sleep(50) } return true }
+
+it('restore hook: clears a leftover backup marker on every start, including with no dump', () => {
+  const data = join(dir, 'ncdata'); mkdirSync(data)
+  const leftover = join(data, '.idea-backup-pending')
+  writeFileSync(leftover, '')
+  const env = { PATH: `${bin}:${process.env.PATH}`, OCC: FAKE_OCC, IDEA_RESTORE_DB_DIR: out, IDEA_RESTORE_DATA: data }
+  assert.equal(spawnSync(RESTORE, [], { env }).status, 0)
+  assert.ok(!existsSync(leftover), 'marker removed when there is no dump')
+  writeFileSync(leftover, '')
+  assert.equal(run(DUMP).status, 0)
+  writeFileSync(join(dir, 'occ.json'), JSON.stringify({ calls: [] }))
+  env.FAKE_OCC_STATE = join(dir, 'occ.json')
+  assert.equal(spawnSync(RESTORE, [], { env, encoding: 'utf8' }).status, 0)
+  assert.ok(!existsSync(leftover), 'marker removed when a dump is present too')
+})
 
 it('restore hook: quick maintenance off, then a detached worker scans once Apache is up; once per dump id', async () => {
   const state = join(dir, 'occ.json'), data = join(dir, 'ncdata'), status = join(dir, 'status.json')

@@ -4,6 +4,26 @@ Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>
 Kits get a release only through Engine `updateApp` (idea#374). Every release so far keeps the
 same pinned images, so no image is rebuilt or republished.
 
+## 1.7-31.0.1
+
+- **Healthcheck during backup** (app-nextcloud#29): the `nextcloud-app` Docker healthcheck treats
+  maintenance mode as alive only while an IDEA backup is in progress
+  (`data/nextcloud/data/.idea-backup-pending`, written by the preHook `touch`, removed by
+  postHook and by `00-idea-restore.sh` on every start) and the marker's age (`now - mtime`) is
+  in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,
+  `IDEA_BACKUP_MARKER_MAX_AGE_S` default 7200). HTTP 200 with
+  `"installed":true,"maintenance":false,"needsDbUpgrade":false` stays the ready path; HTTP 200 or 503 with
+  `"maintenance":true` (Nextcloud 31 answers 200) is accepted only with a fresh marker, so a failed postHook, a manual
+  `occ maintenance:mode --on`, a leftover older than 2 h, or a mtime more than 5 min in the
+  future still goes unhealthy. `hookExclude` lists the marker so it never lands in a hook
+  archive. `x-app.healthCheck` is unchanged (updateApp still waits for maintenance off).
+- **Images** unchanged since 1.2 (same digests).
+
+**Migration:** none. A leftover dump-dir marker from earlier #29 tips is removed by
+`db-clean.sh`; the live marker is in the Nextcloud data dir.
+
+**Tested:** `engine_tested` cba91a6, healthcheck Pi check on idea03 (2026-11-15, app 1.7-31.0.1 at bbd8b0e, throwaway pr30-nc on Disk B): official healthcheck exits 0 for HTTP 200 + `"maintenance":true` with a fresh marker; a hook backup whose dump+borg window exceeded 45 s left `nextcloud-app` healthy; after postHook the marker was gone, the app stayed healthy, and `borg list` of the new archive had no `.idea-backup-pending`; maintenance on with no marker went unhealthy in 36 s; a fresh marker stayed healthy for 60 s, then a 3 h old marker and a +1 h future marker each went unhealthy in 46 s; Engine stop/start cleared a leftover stale marker and the app ended healthy; a stub with `"installed":false` exits 1 and `"installed":true` exits 0.
+
 ## 1.6-31.0.1
 
 - **Live backup** (idea#403, agent-engine-dev#404): `x-app.backup` method `hook`, fallback `stop`,

@@ -5,8 +5,9 @@ compatibility:
   engine_min: "0.9.0"
   # 1.5-31.0.1 (idea_usage counter + empty skeleton, idea#464): 7-step on-Pi check on Engine 431ab4c (steps 1–6 idea04, step 7 idea03) at af5f289. Earlier checks on idea03 at c460aca, 1224f54 and 3fa97b1 (pre-install skeleton config), throwaway compose projects.
   # 1.6-31.0.1 (live backup hook, idea#403): Engine-path Pi proof on idea03, Engine 721f0fa, at f08a2a8 (throwaway proof27-nc on Disk B): backupApp method hook (maintenance on, db-dump, maintenance off, db-clean; no stop), listBackup, verifyBackup ok, in-place restoreApp with dump import, files:scan worker and done marker.
+  # 1.7-31.0.1 (app-nextcloud#29 healthcheck during backup maintenance): Pi check on idea03, Engine cba91a6, at bbd8b0e (throwaway pr30-nc on Disk B, 2026-11-15): HTTP 200 or 503 with maintenance true and a fresh marker stays healthy; a hook backup window >45 s stays healthy; postHook clears the marker and hookExclude keeps it out of the archive; no marker / 3 h old / +1 h future go unhealthy; a leftover marker is cleared on start; ready path requires installed:true.
   engine_tested:
-    commit: "721f0fa"
+    commit: "cba91a6"
     version: "1.0"
     date: "2026-11-15"
 

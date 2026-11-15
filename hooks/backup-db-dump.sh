@@ -17,8 +17,12 @@
 # handed to mariadb-dump through MYSQL_PWD; it is never printed or put on argv.
 #
 # Exit 0 = dump written and complete. Any other exit = the Engine treats the
-# preHook as failed: postHook runs (maintenance off, dump, id and markers removed), then the
-# fallback (stop) or fail. A partial dump is never left as nextcloud.sql.
+# preHook as failed: postHook runs (backup marker removed, maintenance off, dump, id
+# and import markers removed), then the fallback (stop) or fail. A partial dump is
+# never left as nextcloud.sql.
+# The app healthcheck marker lives in the Nextcloud data dir (preHook touch / postHook
+# rm, user 33), not here. db-clean.sh still removes a leftover dump-dir marker from
+# earlier tips.
 set -eu
 
 DIR="${IDEA_BACKUP_DB_DIR:-/docker-entrypoint-initdb.d}"

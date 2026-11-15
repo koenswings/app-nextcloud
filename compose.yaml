@@ -10,10 +10,13 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "1.6-31.0.1"
+  version: "1.7-31.0.1"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # Measured on idea04 (Pi 4, 2026-10-28, idea#351): 30.0.6 -> 31.0.1 first start 66-69 s to status.php maintenance:false, needsDbUpgrade:false (6 users, 1203 files, db 163 MB). About 4x margin: real instances add Office and more apps to upgrade.
+  # healthCheck is the updateApp Health-step probe (HTTP 2xx/3xx and this expect). It stays
+  # stricter than the Docker healthcheck, which also accepts maintenance during an IDEA
+  # backup only (app-nextcloud#29).
   healthCheck:
     path: /status.php
     expect: '"maintenance":false,"needsDbUpgrade":false'
@@ -40,20 +43,28 @@ x-app:
     command: /hooks/usage.sh
     timeoutS: 30
   # idea#403: live backup (agent-engine-dev#404, contract agent-app-dev docs/backup-hook.md).
-  # preHook, in order, stops at the first failure: maintenance mode on, then a MariaDB dump into
-  # data/backup/db (the db's initdb folder). borg then reads the instance without data/db
-  # (hookExclude). postHook always runs, every step: maintenance off, dump removed. Nextcloud is
-  # in maintenance mode for the whole run (Steve, Q2). A failed step: postHook, then a normal
-  # stop backup (fallback stop); updateApp's pre-update backup uses fail instead (idea#448).
+  # preHook, in order, stops at the first failure: write data/.idea-backup-pending (user 33),
+  # maintenance mode on, then a MariaDB dump into data/backup/db (the db's initdb folder).
+  # The app healthcheck treats that maintenance window as alive only while the marker is
+  # fresh (app-nextcloud#29; age in [-300 s, 7200 s]). borg then reads the instance without
+  # data/db and without the marker (hookExclude). postHook always runs, every step: marker
+  # removed first (so a failed maintenance:off still goes unhealthy), then maintenance off,
+  # then the dump removed. Nextcloud is in maintenance mode for the whole run (Steve, Q2).
+  # A failed step: postHook, then a normal stop backup (fallback stop); updateApp's
+  # pre-update backup uses fail instead (idea#448).
   # Restore of a hook archive: MariaDB imports the dump (empty datadir), compose waits for the db
-  # healthcheck, before-starting/00-idea-restore.sh turns maintenance off and starts a detached
-  # files:scan --all that runs once Apache answers (outside the healthTimeout port-ready budget),
-  # once per dump. A stopped instance gets a cold backup (hooks skipped, data/db kept).
+  # healthcheck, before-starting/00-idea-restore.sh removes a leftover marker, turns maintenance
+  # off and starts a detached files:scan --all that runs once Apache answers (outside the
+  # healthTimeout port-ready budget), once per dump. The same hook also removes a leftover
+  # marker on a normal start. A stopped instance gets a cold backup (hooks skipped, data/db kept).
   backup:
     method: hook
     fallback: stop
     hookTimeout: 600     # per step; a 163 MB database dumps in well under a minute on a Pi 4
     preHook:
+      - service: nextcloud-app
+        user: "33"
+        command: [touch, /var/www/html/data/.idea-backup-pending]
       - service: nextcloud-app
         user: "33"
         command: [php, /var/www/html/occ, maintenance:mode, --on]
@@ -62,11 +73,15 @@ x-app:
     postHook:
       - service: nextcloud-app
         user: "33"
+        command: [rm, -f, /var/www/html/data/.idea-backup-pending]
+      - service: nextcloud-app
+        user: "33"
         command: [php, /var/www/html/occ, maintenance:mode, --off]
       - service: nextcloud-db
         command: [/idea/backup/db-clean.sh]
     hookExclude:
       - data/db          # live InnoDB files: the dump in data/backup/db replaces them
+      - data/nextcloud/data/.idea-backup-pending  # ephemeral healthcheck marker; also cleared on start
     # Paths true of a hook archive and of a fallback (stop) or cold archive (engine#401 adds per-mode checks).
     verify:
       present:
@@ -82,7 +97,7 @@ services:
     #image: nextcloud
     image: koenswings/nextcloud:1.0-31.0.1@sha256:3fcd398e8e9b0d46cc84ecebe70a95b4ad97ffd85f974419376d7ddd68a1823d
     labels:
-      x-app-version: "1.6-31.0.1"
+      x-app-version: "1.7-31.0.1"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -90,11 +105,15 @@ services:
     entrypoint: ["/idea-files-entrypoint.sh"]
     # Image CMD is dropped when entrypoint is overridden — restore it.
     command: ["apache2-foreground"]
-    # Docker health = x-app healthCheck: /status.php reports maintenance:false, needsDbUpgrade:false.
-    # The image has curl. An update took 66-69 s on idea04 (30.0.6 -> 31.0.1); start_period equals
-    # healthTimeout 300 so the first start or an upgrade never counts as unhealthy before the Engine gives up.
+    # Docker health (app-nextcloud#29): /idea/app-healthcheck.sh. Alive on a ready status.php,
+    # or on HTTP 200/503 with "maintenance":true only while data/nextcloud/data/.idea-backup-pending
+    # exists with age in [-300 s, 7200 s] (IDEA_BACKUP_MARKER_MAX_FUTURE_S /
+    # IDEA_BACKUP_MARKER_MAX_AGE_S). A stuck or manual maintenance (no marker, a leftover
+    # older than 2 h, or a mtime more than 5 min in the future) still goes unhealthy.
+    # The image has curl and GNU stat. start_period equals healthTimeout 300 so the first
+    # start or an upgrade never counts as unhealthy before the Engine gives up.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -m 4 http://127.0.0.1/status.php | grep -q '\"maintenance\":false,\"needsDbUpgrade\":false'"]
+      test: ["CMD", "/idea/app-healthcheck.sh"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -116,6 +135,7 @@ services:
       - ./hooks/usage.sh:/hooks/usage.sh:ro
       # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
       - ./data/backup/db:/idea-backup-db:ro
+      - ./hooks/app-healthcheck.sh:/idea/app-healthcheck.sh:ro
     # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import
     # (MariaDB's temporary init server has no TCP) has finished before Nextcloud starts.
     depends_on:
@@ -171,7 +191,7 @@ services:
     #image: mariadb
     image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
-      x-app-version: "1.6-31.0.1"
+      x-app-version: "1.7-31.0.1"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -211,7 +231,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "1.6-31.0.1"
+      x-app-version: "1.7-31.0.1"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
