@@ -32,7 +32,7 @@ it('nextcloud-app is pinned to the official 31.0.14-apache index; MariaDB and CO
   assert.deepEqual(imgs, [NC_PIN, MARIADB_PIN, CODE_PIN])
 })
 
-it('app.yaml: engine_tested left at the 1.7 Pi check (Pi proof pending); idea_app_version is not present', () => {
+it('app.yaml: engine_tested left at the 1.7 Pi check; idea_app_version is not present', () => {
   assert.match(appYaml, /engine_tested:\n    commit: "cba91a6"\n    version: "1\.0"\n    date: "2026-11-15"/)
   assert.doesNotMatch(appYaml, /^idea_app_version:/m)
 })
@@ -66,7 +66,9 @@ it('release notes name 1.8-31.0.14 and keep 1.7-31.0.1, 1.6-31.0.1 and 1.5-31.0.
   assert.match(notes, /^## 1\.8-31\.0\.14$/m)
   assert.match(notes, /31\.0\.14-apache/, '1.8: Nextcloud point update')
   assert.match(notes, /07ec73cc816e58d6f45a162cd53ef886462c29271a23fc68d0124cec276e3767/, '1.8: upstream index digest')
-  assert.match(notes, /Pi proof pending/)
+  assert.match(notes, /Pi proof on idea04/, '1.8: Pi proof recorded')
+  assert.match(notes, /4b9b6c17-bde0-4394-bdd6-f86e713a8fde/, '1.8: updateApp trace')
+  assert.match(notes, /1\.8-31\.0\.14` \(6a48eca\)/, '1.8: tag recorded')
   assert.match(notes, /^## 1\.7-31\.0\.1$/m)
   assert.match(notes, /app-nextcloud#29/, '1.7: healthcheck during backup maintenance')
   assert.match(notes, /^## 1\.6-31\.0\.1$/m)
