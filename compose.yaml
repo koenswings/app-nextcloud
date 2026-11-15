@@ -36,6 +36,12 @@ x-app:
     Before that start, x-app.update.prepare stages richdocuments 12.0.2 and idea_usage
     (Nextcloud 31-35) into custom_apps.
   # Engine update hooks (Axle addendum, 2026-11-15; idea#548 merged).
+  # Engine floor: these four stages are declared, and 6.0 needs them (prepare
+  # stages richdocuments 12.0.2 and idea_usage max 35 before occ upgrade).
+  # Engine 41ba677+ (engine#463) refuses this bundle with
+  # UPDATE_STAGES_UNSUPPORTED until #456 L. A run on pre-#463 Engine 80ba4af
+  # is not a field proof: without prepare, occ upgrade disables Office and
+  # idea_usage on an offline kit. Pi proof waits for #456 L.
   # Step order after Swap: prepare → Start → Health → verify → work → settle.
   # prepare and verify failures roll back; work and settle failures never roll
   # back (the path stops with migrationsPending). Fields: prepare/verify/work
