@@ -4,6 +4,28 @@ Tags are set by the Lead bot on the merged release commit (`<IDEA major>.<minor>
 Kits get a release only through Engine `updateApp` (idea#374). Every release so far keeps the
 same pinned images, so no image is rebuilt or republished.
 
+## 1.6-31.0.1
+
+- **Live backup** (idea#403, agent-engine-dev#404): `x-app.backup` method `hook`, fallback `stop`,
+  `hookTimeout` 600 s per step. preHook: maintenance mode on, then a MariaDB dump
+  (`--single-transaction`) into `data/backup/db`; postHook: maintenance off, dump, id and import markers removed.
+  `hookExclude: [data/db]`. See [backup.md](./backup.md).
+- **Restore of a hook archive**: `./data/backup/db` is MariaDB's initdb folder, so an empty datadir
+  imports the dump. New db healthcheck (the image's `healthcheck.sh --connect --innodb_initialized`) with
+  `MARIADB_AUTO_UPGRADE=1`, which creates the healthcheck user on an existing data dir, and
+  `depends_on: service_healthy` on `nextcloud-app`. New `before-starting/00-idea-restore.sh`:
+  maintenance off before Apache, then a detached `files:scan --all` once Apache answers, once per dump.
+  A broken dump import fails closed: initdb markers leave `data/db/.idea-import-pending` and the db
+  healthcheck stays unhealthy on it (move `data/db` aside and start again).
+- **Images** unchanged since 1.2 (same digests).
+
+**Migration:** none. On the first start of 1.6 Docker creates the empty `data/backup/db` folder,
+and the MariaDB entrypoint (`MARIADB_AUTO_UPGRADE=1`) creates the `healthcheck` user and
+`data/db/.my-healthcheck.cnf` when they are missing (a few seconds, temporary server).
+The app now starts only once MariaDB answers on TCP (a few seconds on a normal start).
+
+**Tested:** `engine_tested` 721f0fa, Engine-path Pi proof on idea03 (2026-11-15, app at f08a2a8, throwaway instance on Disk B): `backupApp` ran the hook (maintenance on, db-dump, maintenance off, db-clean; no stop, maintenance window about 21 s), `listBackup` and `verifyBackup` passed, and an in-place `restoreApp` imported the dump, ran the `files:scan` worker (done marker written) and brought back the deleted file, share and user.
+
 ## 1.5-31.0.1
 
 Since the last tag, `1.2-31.0.1` (0a6e764). 1.3 and 1.4 were version bumps on main and were never tagged.

@@ -1,5 +1,5 @@
 /**
- * Release 1.5-31.0.1: version wiring and pins (idea#464). Run: node --test tests/
+ * Release 1.6-31.0.1: version wiring and pins (idea#464, idea#403 live backup). Run: node --test tests/
  * check-compose: set AAD_CHECK_COMPOSE to agent-app-dev script/check-compose.mjs to also run it.
  */
 import { it } from 'node:test'
@@ -10,12 +10,12 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const VER = '1.5-31.0.1'
+const VER = '1.6-31.0.1'
 const compose = readFileSync(join(root, 'compose.yaml'), 'utf8')
 const appYaml = readFileSync(join(root, 'app.yaml'), 'utf8')
 
-it('x-app.version and every service x-app-version label are 1.5-31.0.1', () => {
-  assert.match(compose, /^  version: "1\.5-31\.0\.1"$/m)
+it('x-app.version and every service x-app-version label are 1.6-31.0.1', () => {
+  assert.match(compose, /^  version: "1\.6-31\.0\.1"$/m)
   const labels = [...compose.matchAll(/^      x-app-version: "([^"]+)"$/gm)].map(m => m[1])
   assert.deepEqual(labels, [VER, VER, VER])
 })
@@ -30,18 +30,20 @@ it('image pins unchanged since 1.2 (digest-pinned, no rebuild)', () => {
 })
 
 it('app.yaml: engine_tested is set from the on-Pi check, idea_app_version unchanged', () => {
-  assert.match(appYaml, /engine_tested:\n    commit: "431ab4c"\n    version: "1\.0"\n    date: "2026-11-14"/)
+  assert.match(appYaml, /engine_tested:\n    commit: "721f0fa"\n    version: "1\.0"\n    date: "2026-11-15"/)
   assert.match(appYaml, /^idea_app_version: "1\.0"$/m)
 })
 
-it('release notes name 1.5-31.0.1', () => {
+it('release notes name 1.6-31.0.1 and keep 1.5-31.0.1', () => {
   const notes = readFileSync(join(root, 'docs/releases.md'), 'utf8')
+  assert.match(notes, /^## 1\.6-31\.0\.1$/m)
+  assert.match(notes, /x-app\.backup/, '1.6: live backup hook')
   assert.match(notes, /^## 1\.5-31\.0\.1$/m)
   assert.match(notes, /before `maintenance:install`/, '#23: skeleton config in place before install')
   assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), '#23 config file ships in the release')
 })
 
-it('agent-app-dev check-compose --tag 1.5-31.0.1 (when AAD_CHECK_COMPOSE is set)', { skip: !process.env.AAD_CHECK_COMPOSE || !existsSync(process.env.AAD_CHECK_COMPOSE) }, () => {
-  const r = spawnSync('node', [process.env.AAD_CHECK_COMPOSE, '--tag', VER, join(root, 'compose.yaml')], { encoding: 'utf8' })
+it('agent-app-dev check-compose --release --tag 1.6-31.0.1 (when AAD_CHECK_COMPOSE is set)', { skip: !process.env.AAD_CHECK_COMPOSE || !existsSync(process.env.AAD_CHECK_COMPOSE) }, () => {
+  const r = spawnSync('node', [process.env.AAD_CHECK_COMPOSE, '--release', '--tag', VER, join(root, 'compose.yaml')], { encoding: 'utf8' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })

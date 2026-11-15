@@ -14,5 +14,6 @@ Update this file whenever an authoritative doc is added or significantly revised
 | [usb-sticks.md](./usb-sticks.md) | Read-only USB sticks (`x-app.usbMount`, `usb-sync.sh`, idea#193) |
 | [first-start.md](./first-start.md) | Self-install and hook order |
 | [usage-hook.md](./usage-hook.md) | idea#413 / idea#431 / idea#464 usage hook (`x-app.usage`, day summaries, Office samples, share/file-drop byGroup, appsOpened, documents created) |
-| [releases.md](./releases.md) | Release notes per tagged version (1.5-31.0.1) |
+| [backup.md](./backup.md) | idea#403 live backup: `x-app.backup` hook steps (maintenance mode, MariaDB dump), restore of a hook archive |
+| [releases.md](./releases.md) | Release notes per tagged version (1.6-31.0.1) |
 | [../demo/README.md](../demo/README.md) | Demo apps (engine#369): `app.yaml` `demo:` block, demo pack v1 (`demo/build-demo-pack.py`, `CREDITS.txt`), `demo/hook.sh seed`; and the manual `install-demo.sh` |
