@@ -1,7 +1,7 @@
 /**
- * Release 4.0-34.0.6 is now history: this tree is 5.0-35.0.3.
+ * Release 4.0-34.0.6 is now history: this tree is 6.0-35.0.3.
  * Keep the 4.0 notes in docs/releases.md. Live compose / tarball pins live in
- * tests/release-5.0.test.mjs.
+ * tests/release-6.0.test.mjs.
  * Run: node --test tests/
  */
 import { it } from 'node:test'
@@ -27,10 +27,11 @@ it('release notes still document 4.0-34.0.6 as the previous hop', () => {
   assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), 'skeleton config still ships')
 })
 
-it('live compose is no longer 4.0-34.0.6 (superseded by 5.0)', () => {
+it('live compose is no longer 4.0-34.0.6 (superseded by 5.0 and 6.0)', () => {
   const compose = readFileSync(join(root, 'compose.yaml'), 'utf8')
   assert.doesNotMatch(compose, /^  version: "4\.0-34\.0\.6"$/m)
-  assert.doesNotMatch(compose, /nextcloud:34\.0\.6-apache/)
-  assert.doesNotMatch(compose, /richdocuments-v11\.1\.3/)
+  // 5.0 is database-only: Nextcloud 34.0.6 and richdocuments 11.1.3 stay; only the version,
+  // updatesFrom and the MariaDB pin move on.
+  assert.doesNotMatch(compose, /nextcloud-mariadb:1\.0-11\.7\.2/)
   assert.doesNotMatch(compose, /^  updatesFrom: \[3\]$/m)
 })

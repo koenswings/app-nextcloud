@@ -10,11 +10,11 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "5.0-35.0.3"
+  version: "6.0-35.0.3"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # 1.x used 300 s (~4x the measured 30.0.6 -> 31.0.1 first start of 66-69 s on idea04,
-  # 2026-10-28). 2.0, 3.0, 4.0 and 5.0 are Nextcloud majors: desk estimate 600 s until a pool
+  # 2026-10-28). 2.0, 3.0, 4.0 and 6.0 are Nextcloud majors (5.0 is database-only): desk estimate 600 s until a pool
   # Pi times these hops (idea#548 §8.1). healthCheck is the
   # updateApp Health-step probe (HTTP 2xx/3xx and this expect). It stays stricter
   # than the Docker healthcheck, which also accepts maintenance during an IDEA
@@ -25,12 +25,13 @@ x-app:
   healthTimeout: 600
   # Nextcloud cannot skip majors: an App release that moves to the next Nextcloud major
   # lists only the previous App major (repo convention: a list of major numbers, so
-  # [4] covers the 4.x line including 4.0-34.0.6). 5.0 does not list 3, 2 or 1, because
-  # a jump from Nextcloud 33, 32 or 31 to 35 would skip a major. Axle's chained path
-  # is a sequence of such hops; each hop still has to pass updatesFrom on its own.
-  updatesFrom: [4]
+  # [5] covers the 5.x line including 5.0-34.0.6 (Nextcloud 34 on MariaDB 11.8). 6.0 does
+  # not list 4 or older: 4.x is still on MariaDB 11.7 (idea#548 Q9: 11.8 lands before 35),
+  # and 3.x or older would skip a Nextcloud major. Axle's chained path is a sequence of
+  # such hops; each hop still has to pass updatesFrom on its own.
+  updatesFrom: [5]
   migrationNote: >
-    Nextcloud upgrades its database on the first start of 5.0 (34 -> 35). Files and
+    Nextcloud upgrades its database on the first start of 6.0 (34 -> 35). Files and
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
     Before that start, x-app.update.prepare stages richdocuments 12.0.2 and idea_usage
     (Nextcloud 31-35) into custom_apps.
@@ -152,14 +153,14 @@ services:
   nextcloud-app:
     #image: nextcloud
     # Publish pending (Koen YES): retag this upstream index to
-    # koenswings/nextcloud:5.0-35.0.3 and swap the pin. Official
+    # koenswings/nextcloud:6.0-35.0.3 and swap the pin. Official
     # library/nextcloud 35.0.3-apache multi-platform index (linux/arm64 is in it).
     # check-compose and Engine saveName() require repo:tag@sha256:<64 hex>
     # (no digest-only pin, no unpublished retag name), so the compose uses
     # the published official tag+index digest until the retag exists.
     image: nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3
     labels:
-      x-app-version: "5.0-35.0.3"
+      x-app-version: "6.0-35.0.3"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -253,14 +254,17 @@ services:
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
       # x-app.update hooks: must match x-app.version. Used to look up
       # hooks/update-targets when a bundled tarball is not visible.
-      - IDEA_APP_VERSION=5.0-35.0.3
+      - IDEA_APP_VERSION=6.0-35.0.3
     networks:
       - backend
   nextcloud-db:
     #image: mariadb
-    image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
+    # Unchanged since 5.0 (MariaDB 11.8, idea#548 Q9): official library/mariadb 11.8.9-noble
+    # (= ubu2404) multi-platform index, linux/arm64 v8 in it, until a
+    # koenswings/nextcloud-mariadb:1.0-11.8.9-MariaDB-ubu2404 retag is published (Koen YES).
+    image: mariadb:11.8.9-noble@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707
     labels:
-      x-app-version: "5.0-35.0.3"
+      x-app-version: "6.0-35.0.3"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -300,7 +304,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "5.0-35.0.3"
+      x-app-version: "6.0-35.0.3"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
