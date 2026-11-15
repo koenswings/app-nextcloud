@@ -43,22 +43,28 @@ x-app:
     command: /hooks/usage.sh
     timeoutS: 30
   # idea#403: live backup (agent-engine-dev#404, contract agent-app-dev docs/backup-hook.md).
-  # preHook, in order, stops at the first failure: maintenance mode on, then a MariaDB dump into
-  # data/backup/db (the db's initdb folder). The dump script first writes .idea-backup-pending,
-  # so the app healthcheck treats that maintenance window as alive (app-nextcloud#29). borg then
-  # reads the instance without data/db (hookExclude). postHook always runs, every step:
-  # maintenance off, dump and backup-pending marker removed. Nextcloud is in maintenance mode
-  # for the whole run (Steve, Q2). A failed step: postHook, then a normal stop backup (fallback
-  # stop); updateApp's pre-update backup uses fail instead (idea#448).
+  # preHook, in order, stops at the first failure: write data/.idea-backup-pending (user 33),
+  # maintenance mode on, then a MariaDB dump into data/backup/db (the db's initdb folder).
+  # The app healthcheck treats that maintenance window as alive only while the marker is
+  # fresh (app-nextcloud#29; age in [-300 s, 7200 s]). borg then reads the instance without
+  # data/db and without the marker (hookExclude). postHook always runs, every step: marker
+  # removed first (so a failed maintenance:off still goes unhealthy), then maintenance off,
+  # then the dump removed. Nextcloud is in maintenance mode for the whole run (Steve, Q2).
+  # A failed step: postHook, then a normal stop backup (fallback stop); updateApp's
+  # pre-update backup uses fail instead (idea#448).
   # Restore of a hook archive: MariaDB imports the dump (empty datadir), compose waits for the db
-  # healthcheck, before-starting/00-idea-restore.sh turns maintenance off and starts a detached
-  # files:scan --all that runs once Apache answers (outside the healthTimeout port-ready budget),
-  # once per dump. A stopped instance gets a cold backup (hooks skipped, data/db kept).
+  # healthcheck, before-starting/00-idea-restore.sh removes a leftover marker, turns maintenance
+  # off and starts a detached files:scan --all that runs once Apache answers (outside the
+  # healthTimeout port-ready budget), once per dump. The same hook also removes a leftover
+  # marker on a normal start. A stopped instance gets a cold backup (hooks skipped, data/db kept).
   backup:
     method: hook
     fallback: stop
     hookTimeout: 600     # per step; a 163 MB database dumps in well under a minute on a Pi 4
     preHook:
+      - service: nextcloud-app
+        user: "33"
+        command: [touch, /var/www/html/data/.idea-backup-pending]
       - service: nextcloud-app
         user: "33"
         command: [php, /var/www/html/occ, maintenance:mode, --on]
@@ -67,11 +73,15 @@ x-app:
     postHook:
       - service: nextcloud-app
         user: "33"
+        command: [rm, -f, /var/www/html/data/.idea-backup-pending]
+      - service: nextcloud-app
+        user: "33"
         command: [php, /var/www/html/occ, maintenance:mode, --off]
       - service: nextcloud-db
         command: [/idea/backup/db-clean.sh]
     hookExclude:
       - data/db          # live InnoDB files: the dump in data/backup/db replaces them
+      - data/nextcloud/data/.idea-backup-pending  # ephemeral healthcheck marker; also cleared on start
     # Paths true of a hook archive and of a fallback (stop) or cold archive (engine#401 adds per-mode checks).
     verify:
       present:
@@ -96,9 +106,10 @@ services:
     # Image CMD is dropped when entrypoint is overridden — restore it.
     command: ["apache2-foreground"]
     # Docker health (app-nextcloud#29): /idea/app-healthcheck.sh. Alive on a ready status.php,
-    # or on HTTP 503 with "maintenance":true only while data/backup/db/.idea-backup-pending
-    # exists and is no older than 2 h (IDEA_BACKUP_MARKER_MAX_AGE_S, default 7200). A stuck or
-    # manual maintenance (no marker, or a leftover marker older than 2 h) still goes unhealthy.
+    # or on HTTP 503 with "maintenance":true only while data/nextcloud/data/.idea-backup-pending
+    # exists with age in [-300 s, 7200 s] (IDEA_BACKUP_MARKER_MAX_FUTURE_S /
+    # IDEA_BACKUP_MARKER_MAX_AGE_S). A stuck or manual maintenance (no marker, a leftover
+    # older than 2 h, or a mtime more than 5 min in the future) still goes unhealthy.
     # The image has curl and GNU stat. start_period equals healthTimeout 300 so the first
     # start or an upgrade never counts as unhealthy before the Engine gives up.
     healthcheck:
@@ -123,7 +134,6 @@ services:
       - ./docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:/docker-entrypoint-hooks.d/before-starting/20-idea-trusted-domains.sh:ro
       - ./hooks/usage.sh:/hooks/usage.sh:ro
       # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
-      # app-nextcloud#29: the app healthcheck looks here for .idea-backup-pending (ro is enough).
       - ./data/backup/db:/idea-backup-db:ro
       - ./hooks/app-healthcheck.sh:/idea/app-healthcheck.sh:ro
     # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import

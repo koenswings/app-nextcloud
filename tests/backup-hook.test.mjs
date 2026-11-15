@@ -42,9 +42,9 @@ const run = (script, env = {}) => spawnSync(script, [], { encoding: 'utf8',
 
 it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, db healthcheck, depends_on', () => {
   assert.match(compose, /^  backup:\n    method: hook\n    fallback: stop\n    hookTimeout: 600/m)
-  assert.match(compose, /preHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --on\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-dump\.sh\]/)
-  assert.match(compose, /postHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --off\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-clean\.sh\]/)
-  assert.match(compose, /hookExclude:\n      - data\/db /)
+  assert.match(compose, /preHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[touch, \/var\/www\/html\/data\/\.idea-backup-pending\]\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --on\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-dump\.sh\]/)
+  assert.match(compose, /postHook:\n      - service: nextcloud-app\n        user: "33"\n        command: \[rm, -f, \/var\/www\/html\/data\/\.idea-backup-pending\]\n      - service: nextcloud-app\n        user: "33"\n        command: \[php, \/var\/www\/html\/occ, maintenance:mode, --off\]\n      - service: nextcloud-db\n        command: \[\/idea\/backup\/db-clean\.sh\]/)
+  assert.match(compose, /hookExclude:\n      - data\/db .*\n      - data\/nextcloud\/data\/\.idea-backup-pending/)
   assert.match(compose, /- \.\/data\/backup\/db:\/docker-entrypoint-initdb\.d\n/)
   assert.match(compose, /- \.\/hooks\/backup-db-dump\.sh:\/idea\/backup\/db-dump\.sh:ro/)
   assert.match(compose, /- \.\/hooks\/backup-db-clean\.sh:\/idea\/backup\/db-clean\.sh:ro/)
@@ -62,8 +62,7 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
 it('dump: writes nextcloud.sql + id, password only via MYSQL_PWD, never printed', () => {
   const r = run(DUMP)
   assert.equal(r.status, 0, r.stderr)
-  assert.deepEqual(readdirSync(out).sort(), ['.idea-backup-pending', '00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
-  assert.ok(statSync(join(out, '.idea-backup-pending')).isFile())
+  assert.deepEqual(readdirSync(out).sort(), ['00-idea-import-begin.sh', 'nextcloud.sql', 'nextcloud.sql.id', 'zz-idea-import-end.sh'])
   assert.match(readFileSync(join(out, 'nextcloud.sql'), 'utf8'), /-- Dump completed on/)
   assert.match(readFileSync(join(out, 'nextcloud.sql.id'), 'utf8'), /^\d{8}T\d{6}Z-[0-9a-f-]{36}\n$/)
   const argv = readFileSync(join(dir, 'dump-argv'), 'utf8')
@@ -76,9 +75,7 @@ it('dump: a failed or truncated dump exits non-zero and leaves no nextcloud.sql 
     writeFileSync(join(out, 'nextcloud.sql'), 'old'); writeFileSync(join(out, 'nextcloud.sql.id'), 'old\n')
     const r = run(DUMP, { FAKE_DUMP: mode })
     assert.notEqual(r.status, 0, mode)
-    // The backup-pending marker stays until postHook db-clean.sh, so the app healthcheck
-    // still treats maintenance as alive until postHook runs.
-    assert.deepEqual(readdirSync(out), ['.idea-backup-pending'], mode)
+    assert.deepEqual(readdirSync(out), [], mode)
     assert.ok(!(r.stdout + r.stderr).includes(SECRET))
   }
 })
@@ -117,6 +114,21 @@ it('clean: removes only the dump, its id, the import markers and the backup-pend
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const until = async (f, ms = 8000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) return false; await sleep(50) } return true }
+
+it('restore hook: clears a leftover backup marker on every start, including with no dump', () => {
+  const data = join(dir, 'ncdata'); mkdirSync(data)
+  const leftover = join(data, '.idea-backup-pending')
+  writeFileSync(leftover, '')
+  const env = { PATH: `${bin}:${process.env.PATH}`, OCC: FAKE_OCC, IDEA_RESTORE_DB_DIR: out, IDEA_RESTORE_DATA: data }
+  assert.equal(spawnSync(RESTORE, [], { env }).status, 0)
+  assert.ok(!existsSync(leftover), 'marker removed when there is no dump')
+  writeFileSync(leftover, '')
+  assert.equal(run(DUMP).status, 0)
+  writeFileSync(join(dir, 'occ.json'), JSON.stringify({ calls: [] }))
+  env.FAKE_OCC_STATE = join(dir, 'occ.json')
+  assert.equal(spawnSync(RESTORE, [], { env, encoding: 'utf8' }).status, 0)
+  assert.ok(!existsSync(leftover), 'marker removed when a dump is present too')
+})
 
 it('restore hook: quick maintenance off, then a detached worker scans once Apache is up; once per dump id', async () => {
   const state = join(dir, 'occ.json'), data = join(dir, 'ncdata'), status = join(dir, 'status.json')

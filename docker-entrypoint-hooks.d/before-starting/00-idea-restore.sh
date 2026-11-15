@@ -23,6 +23,9 @@
 # Paths in the container (on the disk: data/nextcloud/data/...):
 #   /var/www/html/data/.idea-restore-id, .idea-restore-scan.log, .idea-restore-scan.running
 #
+# Also removes data/.idea-backup-pending on every start (app-nextcloud#29), even
+# when there is no dump, so a leftover marker cannot hide stuck maintenance.
+#
 # Fail open: the hook always exits 0.
 # Env (tests): OCC, IDEA_RESTORE_DB_DIR (default /idea-backup-db),
 #   IDEA_RESTORE_DATA (default /var/www/html/data), IDEA_RESTORE_CURL (default curl),
@@ -69,6 +72,14 @@ fi
 
 # Hook mode.
 rm -f "$RUNNING"
+# app-nextcloud#29: drop a leftover backup marker on every start (normal or restore).
+# The marker is in this data dir (www-data can delete it). A live hook backup
+# cannot be running while this hook runs: this script only runs from the image
+# entrypoint on compose up, and backupApp only does `docker compose exec` into
+# already-running containers (it never restarts them). A stopped instance gets
+# a cold backup (hooks skipped, no marker written), so a start-from-stopped
+# cannot overlap a hook that writes the marker.
+rm -f "$DATA/.idea-backup-pending"
 [ -f "$DIR/nextcloud.sql" ] && [ -f "$DIR/nextcloud.sql.id" ] || exit 0
 id="$(head -n 1 "$DIR/nextcloud.sql.id" 2>/dev/null)"
 [ -n "$id" ] || exit 0

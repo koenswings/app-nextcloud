@@ -11,11 +11,13 @@ from the instance folder: no shell and no extra env. `hookTimeout` (600 s) appli
 
 | Step | Service | Command | Does |
 |------|---------|---------|------|
-| preHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --on` | No writes from the web UI, WebDAV or background jobs |
-| preHook[1] | nextcloud-db | `/idea/backup/db-dump.sh` | Writes `.idea-backup-pending`, then `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
+| preHook[0] | nextcloud-app (user 33) | `touch /var/www/html/data/.idea-backup-pending` | Marker for the app healthcheck (host: `data/nextcloud/data/.idea-backup-pending`) |
+| preHook[1] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --on` | No writes from the web UI, WebDAV or background jobs |
+| preHook[2] | nextcloud-db | `/idea/backup/db-dump.sh` | `mariadb-dump --single-transaction` of `nextcloud` into `data/backup/db/nextcloud.sql` (+ `nextcloud.sql.id` and the import markers) |
 | *borg* | — | instance folder minus `data/db` (`hookExclude`) | |
-| postHook[0] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --off` | Idempotent |
-| postHook[1] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the dump (`nextcloud.sql`), its id (`nextcloud.sql.id`), the two import markers (`00-idea-import-begin.sh`, `zz-idea-import-end.sh`), the backup-pending marker, plus their temp files; idempotent |
+| postHook[0] | nextcloud-app (user 33) | `rm -f /var/www/html/data/.idea-backup-pending` | Marker removed first, so a failed `maintenance:off` still goes unhealthy; idempotent |
+| postHook[1] | nextcloud-app (user 33) | `php /var/www/html/occ maintenance:mode --off` | Idempotent |
+| postHook[2] | nextcloud-db | `/idea/backup/db-clean.sh` | Removes the dump (`nextcloud.sql`), its id (`nextcloud.sql.id`), the two import markers (`00-idea-import-begin.sh`, `zz-idea-import-end.sh`), plus their temp files, and a leftover dump-dir marker from earlier tips; idempotent |
 
 Pre steps stop at the first failure. Every post step always runs: after a failed pre step, after a
 failed earlier post step and after a failed borg run. So maintenance mode is switched off even when
@@ -36,20 +38,27 @@ The Docker healthcheck (`hooks/app-healthcheck.sh`, mounted at `/idea/app-health
 treats that window as alive, but only while the backup marker exists:
 
 - HTTP 200 and a body containing `"maintenance":false,"needsDbUpgrade":false`: healthy (ready).
-- HTTP 503, a body containing `"maintenance":true`, and `data/backup/db/.idea-backup-pending`
-  (bound read-only at `/idea-backup-db` in the app container) whose mtime is no older than
-  2 hours (`IDEA_BACKUP_MARKER_MAX_AGE_S`, default 7200): healthy (backup in progress).
-  `db-dump.sh` writes the marker (just `touch`, so mtime is "now") just before the dump;
-  `db-clean.sh` removes it (every postHook step always runs, so a failed dump or a failed
-  `maintenance:mode --off` still clears it). A leftover marker older than the bound counts as
-  absent, so a stuck maintenance window goes unhealthy. A future mtime is treated as fresh, so
-  a backward clock step does not fail a live backup.
+- HTTP 503, a body containing `"maintenance":true`, and `data/nextcloud/data/.idea-backup-pending`
+  (`/var/www/html/data/.idea-backup-pending` in the app container) whose age
+  (`now - mtime`) is in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,
+  `IDEA_BACKUP_MARKER_MAX_AGE_S` default 7200): healthy (backup in progress).
+  preHook `touch`es the marker (mtime is "now") before maintenance is turned on; postHook
+  removes it first, then turns maintenance off (every postHook step always runs).
+  A leftover marker older than 2 h, or more than 5 min in the future (a Pi with no RTC
+  and no NTP after a reboot), counts as absent, so stuck maintenance goes unhealthy.
+  A small backward NTP step (within 5 min) still allows a live backup.
 - Anything else, including maintenance with no marker (a failed postHook that left maintenance
   on, or a manual `occ maintenance:mode --on`): unhealthy.
 
-The brief gap after `maintenance:mode --on` and before `db-dump.sh` starts (and writes the
-marker) is a few seconds, well under the 45 s retry budget. The marker is hidden
-(`.idea-backup-pending`) so MariaDB initdb never sources it.
+The marker lives in the Nextcloud data dir so `before-starting/00-idea-restore.sh` can
+remove it on every start (www-data can write there). The dump folder is mounted
+read-only in the app container, so a marker there could not be cleared on start.
+`hookExclude` lists `data/nextcloud/data/.idea-backup-pending` so the marker never
+lands in a hook archive (and so a restore cannot put a leftover back).
+A live hook backup cannot race that start cleanup: the hook only runs from the image
+entrypoint on `compose up`, and `backupApp` only `docker compose exec`s into already-running
+containers (it never restarts them). A stopped instance gets a cold backup (hooks skipped,
+no marker written).
 
 `x-app.healthCheck` is unchanged. After start or restore the Engine's port-ready check
 (`assertInstancePortReady`) already accepts any HTTP status, including Nextcloud's 503.
@@ -124,4 +133,4 @@ checks: `.env`, `data/nextcloud/config/config.php`, `data/nextcloud/version.php`
 
 `node --test tests/*.test.mjs` (`tests/backup-hook.test.mjs`: compose block, dump/clean with a
 fake `mariadb-dump`, the restore hook with `tests/fake-occ-restore.mjs`;
-`tests/app-healthcheck.test.mjs`: ready, maintenance with a fresh marker, without it, a marker older than 2 h, the 2 h boundary, and down).
+`tests/app-healthcheck.test.mjs`: ready, maintenance with a fresh marker, without it, a marker older than 2 h, the 2 h boundary, a future mtime within 300 s and beyond it, and down).

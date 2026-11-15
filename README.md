@@ -16,7 +16,7 @@ A `before-starting` hook sets `trusted_domains` for the Pi the instance runs on,
 
 ## Backup
 
-Live backup with `x-app.backup` method `hook` (idea#403): maintenance mode and a MariaDB dump while the instance runs; a restored hook archive imports the dump on first start. The app healthcheck stays healthy during that maintenance window only while the backup marker exists and is no older than 2 hours (app-nextcloud#29). See [docs/backup.md](docs/backup.md).
+Live backup with `x-app.backup` method `hook` (idea#403): maintenance mode and a MariaDB dump while the instance runs; a restored hook archive imports the dump on first start. The app healthcheck stays healthy during that maintenance window only while the backup marker exists and its age is between −5 minutes and 2 hours (app-nextcloud#29); a leftover marker is cleared on start. See [docs/backup.md](docs/backup.md).
 
 ## Demo instance
 

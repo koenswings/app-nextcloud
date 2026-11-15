@@ -8,21 +8,25 @@ same pinned images, so no image is rebuilt or republished.
 
 - **Healthcheck during backup** (app-nextcloud#29): the `nextcloud-app` Docker healthcheck treats
   maintenance mode as alive only while an IDEA backup is in progress
-  (`data/backup/db/.idea-backup-pending`, written at the start of `db-dump.sh`, removed by
-  `db-clean.sh`) and the marker's mtime is no older than 2 hours (`IDEA_BACKUP_MARKER_MAX_AGE_S`,
-  default 7200). HTTP 200 with `"maintenance":false,"needsDbUpgrade":false` stays the ready
-  path; HTTP 503 with `"maintenance":true` is accepted only with a fresh marker, so a failed
-  postHook, a manual `occ maintenance:mode --on`, or a leftover marker older than 2 h still goes
-  unhealthy. A future mtime counts as fresh (backward clock skew). `x-app.healthCheck` is
-  unchanged (updateApp still waits for maintenance off).
+  (`data/nextcloud/data/.idea-backup-pending`, written by the preHook `touch`, removed by
+  postHook and by `00-idea-restore.sh` on every start) and the marker's age (`now - mtime`) is
+  in `[-300, 7200]` seconds (`IDEA_BACKUP_MARKER_MAX_FUTURE_S` default 300,
+  `IDEA_BACKUP_MARKER_MAX_AGE_S` default 7200). HTTP 200 with
+  `"maintenance":false,"needsDbUpgrade":false` stays the ready path; HTTP 503 with
+  `"maintenance":true` is accepted only with a fresh marker, so a failed postHook, a manual
+  `occ maintenance:mode --on`, a leftover older than 2 h, or a mtime more than 5 min in the
+  future still goes unhealthy. `hookExclude` lists the marker so it never lands in a hook
+  archive. `x-app.healthCheck` is unchanged (updateApp still waits for maintenance off).
 - **Images** unchanged since 1.2 (same digests).
 
-**Migration:** none.
+**Migration:** none. A leftover dump-dir marker from earlier #29 tips is removed by
+`db-clean.sh`; the live marker is in the Nextcloud data dir.
 
 **Tested:** `node --test tests/` on the box. A Pi check should still prove: a hook backup whose
 dump+borg window exceeds about 45 s leaves `nextcloud-app` healthy; after postHook the marker is
 gone and the app stays healthy; maintenance left on with no marker goes unhealthy; maintenance
-on with a marker whose mtime is more than 2 h old goes unhealthy.
+on with a marker more than 2 h old, or more than 5 min in the future, goes unhealthy; a restart
+with a leftover marker clears it.
 
 ## 1.6-31.0.1
 

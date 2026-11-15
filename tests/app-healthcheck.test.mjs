@@ -84,12 +84,31 @@ it('boundary: a marker aged 7190 s (just under 2 h) is alive; 7210 s (just over)
   assert.equal(r.status, 1, 'just over 2 h should be stale: ' + r.stdout + r.stderr)
 })
 
-it('a future mtime counts as fresh (backward clock skew)', () => {
+it('a future mtime within 300 s counts as fresh (small backward clock skew)', () => {
   writeFileSync(marker, '')
-  const future = Date.now() / 1000 + 3600
-  utimesSync(marker, future, future)
+  const now = Date.now() / 1000
+  utimesSync(marker, now + 60, now + 60)
   const r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
   assert.equal(r.status, 0, r.stdout + r.stderr)
+})
+
+it('a future mtime beyond 300 s is stale (unbounded future would hide stuck maintenance)', () => {
+  writeFileSync(marker, '')
+  const now = Date.now() / 1000
+  utimesSync(marker, now + 3600, now + 3600)
+  const r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+})
+
+it('boundary: a marker 290 s in the future is alive; 310 s in the future is not', () => {
+  writeFileSync(marker, '')
+  const now = Date.now() / 1000
+  utimesSync(marker, now + 290, now + 290)
+  let r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 0, '290 s in the future should still be fresh: ' + r.stdout + r.stderr)
+  utimesSync(marker, now + 310, now + 310)
+  r = run({ IDEA_HC_CODE: '503', IDEA_HC_BODY: MAINT })
+  assert.equal(r.status, 1, '310 s in the future should be stale: ' + r.stdout + r.stderr)
 })
 
 it('IDEA_BACKUP_MARKER_MAX_AGE_S shortens the bound', () => {
