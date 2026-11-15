@@ -24,7 +24,7 @@ and the MariaDB entrypoint (`MARIADB_AUTO_UPGRADE=1`) creates the `healthcheck` 
 `data/db/.my-healthcheck.cnf` when they are missing (a few seconds, temporary server).
 The app now starts only once MariaDB answers on TCP (a few seconds on a normal start).
 
-**Tested:** box only so far; the on-Pi check (idea03) is still to do, so `engine_tested` stays 431ab4c.
+**Tested:** `engine_tested` 721f0fa, Engine-path Pi proof on idea03 (2026-11-15, app at f08a2a8, throwaway instance on Disk B): `backupApp` ran the hook (maintenance on, db-dump, maintenance off, db-clean; no stop, maintenance window about 21 s), `listBackup` and `verifyBackup` passed, and an in-place `restoreApp` imported the dump, ran the `files:scan` worker (done marker written) and brought back the deleted file, share and user.
 
 ## 1.5-31.0.1
 
