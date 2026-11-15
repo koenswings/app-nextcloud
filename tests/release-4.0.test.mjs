@@ -30,7 +30,8 @@ it('release notes still document 4.0-34.0.6 as the previous hop', () => {
 it('live compose is no longer 4.0-34.0.6 (superseded by 5.0)', () => {
   const compose = readFileSync(join(root, 'compose.yaml'), 'utf8')
   assert.doesNotMatch(compose, /^  version: "4\.0-34\.0\.6"$/m)
-  assert.doesNotMatch(compose, /nextcloud:34\.0\.6-apache/)
-  assert.doesNotMatch(compose, /richdocuments-v11\.1\.3/)
+  // 5.0 is database-only: Nextcloud 34.0.6 and richdocuments 11.1.3 stay; only the version,
+  // updatesFrom and the MariaDB pin move on.
+  assert.doesNotMatch(compose, /nextcloud-mariadb:1\.0-11\.7\.2/)
   assert.doesNotMatch(compose, /^  updatesFrom: \[3\]$/m)
 })
