@@ -43,7 +43,10 @@ services:
     monitors:
       - kind: dockerhub
         repo: collabora/code
-        tag_pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+        # CODE tags since 21.11 are five-part (24.04.13.2.1, 26.04.6.1.1). The old
+        # four-part pattern only matched pre-21.11 tags, so "latest" was 6.4.14.3
+        # (idea#543). Optional trailing field keeps those historic 4-part tags too.
+        tag_pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+(\\.\\d+)?$"
 
 # Demo apps (agent-engine-dev#369, Console "Demo apps" / setupDemo). The Engine downloads the
 # pinned pack (or takes IDEA-DEMO/idea-demo-nextcloud-vN.tar or IDEA-DEMO/nextcloud/pack.json
