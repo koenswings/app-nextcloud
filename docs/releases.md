@@ -25,11 +25,10 @@ before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
   Prepare re-stages the same tarballs (idempotent) and pins `appstoreenabled=false`, verify
   checks Nextcloud is up with richdocuments 11.1.3 or newer and idea_usage 1.0.0 enabled, work
-  runs `cron.php`, and settle is the read-only probe that restores `appstoreenabled` once
-  settled. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  runs `cron.php`, work first restores `appstoreenabled` and then runs `cron.php`, and settle is the read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
   itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
   4.0 instance those stages change nothing lasting for this hop (Nextcloud and the bundled
-  apps do not change; the app store pin is set in prepare and restored in settle).
+  apps do not change; the app store pin is set in prepare and restored in work).
 - **Engine floor:** 5.0 declares those stages, so Engine 41ba677 (engine#463) and later
   refuse the bundle at Check with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456
   stages land (#456 L). A Pi proof on the pool's pre-#463 Engine 80ba4af is still a valid
@@ -69,8 +68,8 @@ and the way back is the Backup Disk backup.
 `mariadb-upgrade`; Nextcloud `healthTimeout` is 600 s. Timings will be recorded on the
 80ba4af proof.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
