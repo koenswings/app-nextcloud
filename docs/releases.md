@@ -45,7 +45,7 @@ reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft.
 - **Verify hook:** `x-app.update.verify` runs `hooks/verify-update.sh` once after Health
   (`docker compose exec -T -u 33`; timeout 120). Exit 0 passes; any other exit is
   `VERIFY_FAILED` and rolls back. Checks `status.php` (installed, maintenance false,
-  needsDbUpgrade false) and `occ app:list` showing richdocuments 11.1.3 enabled and
+  needsDbUpgrade false) and `occ app:list` showing richdocuments 11.1.3 or newer enabled and
   idea_usage 1.0.0 enabled. Versions come from the bundled tarball / `hooks/update-targets`
   (keyed by `IDEA_APP_VERSION`, which matches `x-app.version`).
 - **Work hook:** `x-app.update.work` runs `hooks/work-update.sh` once after verify
