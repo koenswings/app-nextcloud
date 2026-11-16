@@ -74,6 +74,17 @@ and the way back is the Backup Disk backup.
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
+- **Restore import fix (agent-engine-dev#468, 2026-11-16):** the in-place restore on 11.8.9 on
+  idea04 failed because the image entrypoint waits only 31 s for its temporary server and the
+  import never ran. `nextcloud-db` gets an entrypoint wrapper (`hooks/db-entrypoint.sh`: 300-try
+  wait, `.idea-restore-pending` marker, a never-completed import's datadir moved into a new
+  `data/db-quarantine/` folder and re-imported), `restart: on-failure:3`, a db healthcheck
+  (`hooks/db-healthcheck.sh`) that requires the Nextcloud schema once it is expected (not on a
+  fresh install, which would deadlock `depends_on: service_healthy`), and
+  `verify.hook.present: [data/backup/db/nextcloud.sql, data/backup/db/nextcloud.sql.id]`.
+  Part of the unreleased 5.0 draft, so no version bump. Details: `docs/backup.md`
+  "Entrypoint wrapper and retry".
+
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
 
