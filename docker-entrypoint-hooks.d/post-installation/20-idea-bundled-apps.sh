@@ -5,8 +5,10 @@
 #   before-starting/20-idea-bundled-apps.sh    (symlink; every start, so existing installs get it too)
 # For each <app>-v<ver>.tar.gz in IDEA_BUNDLED_APPS whose sha256 matches SHA256SUMS, extract
 # it into custom_apps/ when that app is not there yet. Never overwrites or downgrades an app
-# an admin already installed/updated. Enabling is left to the app's own hook (30-idea-office).
-# Fail open: always exits 0.
+# an admin already installed/updated. A major hop uses hooks/prep-custom-apps-for-upgrade.sh
+# (x-app.update.prepare) to replace custom_apps before occ upgrade; this hook must stay
+# "never overwrite" so a later start does not clobber an admin-updated app.
+# Enabling is left to the app's own hook (30-idea-office). Fail open: always exits 0.
 #
 # Env: IDEA_BUNDLED_APPS (default /idea-bundled-apps), IDEA_CUSTOM_APPS (default /var/www/html/custom_apps)
 set -u
