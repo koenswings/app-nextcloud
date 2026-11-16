@@ -95,4 +95,4 @@ functions without running it (Engine hook / Console demo button, idea#235).
 script fails closed (exit 13). Office: each instance has its own CODE behind its own Nextcloud port
 (no host port 9980), see docs/first-start.md.
 
-Tests: `node --test tests/` (`tests/install-demo.test.mjs` mocks the Engine queue, occ and WebDAV).
+Tests: `node --test tests/*.test.mjs` (`tests/install-demo.test.mjs` mocks the Engine queue, occ and WebDAV).

@@ -199,3 +199,10 @@ it('idea_usage keeps the exact-version check (a newer idea_usage fails)', () => 
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, new RegExp(`idea_usage ${USAGE_VER.replace(/\./g, '\\.')} is not enabled`))
 })
+
+it('idea_usage version is matched literally (dots are not wildcards)', () => {
+  const fake = USAGE_VER.replace(/\./g, 'x')
+  const r = run({ IDEA_OCC_LIST: appList(RD_VER, fake) })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /idea_usage .+ is not enabled/)
+})

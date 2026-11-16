@@ -98,11 +98,11 @@ the 34 hop and before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
   Prepare re-stages the same tarballs (idempotent) and pins `appstoreenabled=false`, verify
   checks Nextcloud is up with richdocuments 11.1.3 or newer and idea_usage 1.0.0 enabled, work
-  runs `cron.php`, and settle is the read-only probe that restores `appstoreenabled` once
-  settled. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  first restores `appstoreenabled` and then runs `cron.php`, and settle is the read-only
+  probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
   itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
   4.0 instance those stages change nothing lasting for this hop (Nextcloud and the bundled
-  apps do not change; the app store pin is set in prepare and restored in settle).
+  apps do not change; the app store pin is set in prepare and restored in work).
 - **Engine floor:** 5.0 declares those stages, so Engine 41ba677 (engine#463) and later
   refuse the bundle at Check with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456
   stages land (#456 L). A Pi proof on the pool's pre-#463 Engine 80ba4af is still a valid
@@ -142,8 +142,8 @@ and the way back is the Backup Disk backup.
 `mariadb-upgrade`; Nextcloud `healthTimeout` is 600 s. Timings will be recorded on the
 80ba4af proof.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
@@ -217,8 +217,8 @@ this branch is now 5.0-34.0.6; this section is the 4.0 hop that 5.0 updates from
   maintainers say there are no critical admin changes. PHP 8.5 is provided by the official
   image. See idea#548 §8.5 for shipped apps (`office`, `files_lock`, `appstore`) and API notes.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
@@ -291,8 +291,8 @@ reserved). No image publish, no tag. Stacked on the 2.0-32.0.15 draft.
   require a configured `serverid` to upgrade (admin overview info only); this draft does
   not set one. MariaDB stays on 11.7.2.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
@@ -358,8 +358,8 @@ reserved). No image publish, no tag.
 - **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
   Re-measure on a pool Pi before locking the release.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
@@ -501,21 +501,34 @@ scripts; the Engine contract does not change.
   `--no-deps` (no database), as root, on a tree that already needs an upgrade; the script
   writes config.php exactly like Nextcloud's `Config::writeData()` (var_export, in place under
   flock, mode 0640, owner kept). It refuses (prepare fails, the hop rolls back) when the pin
-  could not take effect: `appstoreenabled` set in another `config/*.config.php` or via
-  `NC_appstoreenabled`, a config.php without `version`, or a non-scalar value.
+  could not take effect or the write would be unsafe: `appstoreenabled` set in another
+  `config/*.config.php` or via `NC_appstoreenabled`, `NEXTCLOUD_CONFIG_DIR` pointing at another
+  directory, `config_is_read_only` set (Nextcloud would refuse the restore), a config.php that
+  is not plain literals (`token_get_all` check: code such as `getenv('X') ?: 'y'` would be
+  written back frozen), less free space than the new content + 10 KB (Nextcloud's own
+  writeData rule), a config.php without `version`, or a non-scalar value. The write is fsynced
+  before the lock is released. It is not atomic (truncate, then write, as in Nextcloud), which
+  is safe only because a failed prepare always restores the snapshot; the script also
+  include()s the App's config files as root inside the one-off container. Neither is fit for
+  use outside prepare.
 - **State file:** `./data/nextcloud/custom_apps/.idea-update-state/appstoreenabled.state`
   (container `/var/www/html/custom_apps/.idea-update-state/`, owned by 33). One line
   `previous=unset | bool:true | bool:false | int:<n> | string:<base64>`. It is written
   before config.php changes, so a crash in between leaves the real previous value recorded.
   It lives under `custom_apps` because the image's upgrade rsync deletes unknown top-level
-  paths in `/var/www/html`; dot entries are not apps. First record wins: a retried prepare,
-  or a later hop's prepare when an earlier settle never finished, keeps the recorded value.
-- **Restore (settle):** only when settle is about to exit 0 (settled), as user 33 with the
+  paths in `/var/www/html`; dot entries are not apps. First record wins while the pin is in
+  effect: a retried prepare, or a later hop's prepare when an earlier restore never finished
+  (config.php still `false`), keeps the recorded value. If the state file exists but
+  `appstoreenabled` is not `false` (or is unset), the file is stale (changed by hand, or a
+  partial restore): prepare logs it, records the current value again, then pins.
+- **Restore (work):** first thing in `hooks/work-update.sh`, before `cron.php` (Steve's
+  decision on Axle's S4, 2026-11-16). The pin only has to stop `occ upgrade` at Start; once
+  verify has passed the hop cannot roll back, so its job is done. As user 33 with the
   database up: `occ config:system:delete appstoreenabled` if it was unset, otherwise
   `occ config:system:set appstoreenabled --value=<v> --type=boolean|integer|string`; then the
-  state file is removed. No state file: nothing is touched. "not yet" keeps the pin, so
-  background migrations also run without the app store. A failed restore is an `ERROR:`
-  (`SETTLE_FAILED`, no rollback); Resume re-runs work and settle, which retries it.
+  state file is removed. No state file: nothing is touched. A failed restore is an `ERROR:`
+  and a non-zero work exit: `migrationsPending`, no rollback, and Resume re-runs work (already
+  decided), which retries it. settle stays a read-only probe and makes no writes (gap 8).
 - **Rollback:** a prepare, Start, Health or verify failure restores the Engine snapshot.
   `snapshotExclude: []`, so the snapshot holds `config/config.php` and
   `custom_apps/.idea-update-state/` from before prepare: the old version starts with its own
@@ -524,9 +537,9 @@ scripts; the Engine contract does not change.
   rollback itself fails, the pre-update Backup Disk backup is from before prepare too. The
   only way the old version could keep the pin is a restore that skips the snapshot; then the
   app store stays off (harmless on an offline-first kit: Office and idea_usage are bundled)
-  until the next hop's settle restores the recorded value.
+  until the next hop's work step restores the recorded value.
 - **Engines that ignore stages** (pre-#463, e.g. 80ba4af): prepare never runs, so nothing is
-  pinned and settle has nothing to restore. Engines 41ba677+ refuse stage bundles until #456 L.
+  pinned and work has nothing to restore. Engines 41ba677+ refuse stage bundles until #456 L.
 - **richdocuments >= rule (verify):** `hooks/verify-update.sh` accepts richdocuments at the
   pinned (bundled) version or newer, by a semver compare (`idea_version_ge` in
   `hooks/update-lib.sh`: numeric core parts, so 9.10.0 > 9.2.3; a pre-release is older than

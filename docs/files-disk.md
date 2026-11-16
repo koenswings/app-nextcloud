@@ -38,4 +38,4 @@ Every service keeps `restart: no` so Docker never restarts Nextcloud with a stal
   added to the storage are kept; nothing is removed. An invalid group name is logged and the
   storage is left unrestricted. Admin-created storages are never touched.
 - Idempotent: a second start only re-asserts `filesystem_check_changes`.
-- Tests: `node --test tests/` (fake occ in `tests/fake-occ-files.mjs`).
+- Tests: `node --test tests/*.test.mjs` (fake occ in `tests/fake-occ-files.mjs`).

@@ -33,7 +33,7 @@ proxy address (richdocuments:activate-config then detects the same public URL). 
 on one Pi therefore never fight over 9980.
 An instance installed from an older bundle keeps its own compose (host port 9980) unchanged.
 
-Tests: `node --test tests/` (fake occ + simulated entrypoint hook order).
+Tests: `node --test tests/*.test.mjs` (fake occ + simulated entrypoint hook order).
 
 ## Office on a non-LAN address and the CODE welcome dialog (idea#212)
 
