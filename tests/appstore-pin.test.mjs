@@ -3,10 +3,11 @@
  *  - prepare (hooks/prep-custom-apps-for-upgrade.sh -> hooks/appstore-pin.php) sets
  *    appstoreenabled=false in config.php and records the previous value (or "unset")
  *    in custom_apps/.idea-update-state/appstoreenabled.state, state first.
- *  - settle (hooks/settle-update.sh -> update-lib.sh idea_appstore_restore) restores
- *    it with occ once settled, then removes the state file.
+ *  - work (hooks/work-update.sh -> update-lib.sh idea_appstore_restore) restores it
+ *    with occ first, before cron.php, then removes the state file (Steve's S4 decision).
+ *  - settle (hooks/settle-update.sh) is a read-only probe and makes no writes (gap 8).
  * The pin tests need php (skipped without it); the restore tests use a fake occ.
- * No Docker. Run: node --test tests/
+ * No Docker. Run: node --test tests/*.test.mjs
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -20,6 +21,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PREP = join(root, 'hooks/prep-custom-apps-for-upgrade.sh')
 const PIN = join(root, 'hooks/appstore-pin.php')
 const SETTLE = join(root, 'hooks/settle-update.sh')
+const WORK = join(root, 'hooks/work-update.sh')
 const BUNDLED = join(root, 'bundled-apps')
 const HAS_PHP = spawnSync('php', ['-v'], { encoding: 'utf8' }).status === 0
 const NO_PHP = HAS_PHP ? false : 'php not installed'
@@ -27,7 +29,7 @@ const IS_ROOT = typeof process.getuid === 'function' && process.getuid() === 0
 const READY = '{"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"x"}'
 const MAINT = '{"installed":true,"maintenance":true,"needsDbUpgrade":false}'
 
-let dir, html, cfg, dst, stateDir, state, bin, occ, calls
+let dir, html, cfg, dst, stateDir, state, bin, occ, calls, cron, cronLog
 
 const configWith = (extra = '') =>
   `<?php\n$CONFIG = array (\n  'instanceid' => 'oc123',\n  'version' => '31.0.14.1',\n  'installed' => true,\n${extra});\n`
@@ -78,6 +80,14 @@ esac
 exit 1
 `)
   chmodSync(occ, 0o755)
+  cronLog = join(dir, 'cron-log')
+  cron = join(dir, 'cron')
+  writeFileSync(cron, `#!/bin/sh
+echo run >> "${cronLog}"
+[ "$IDEA_CRON_FAIL" = 1 ] && exit 1
+exit 0
+`)
+  chmodSync(cron, 0o755)
 })
 afterEach(() => {
   try { chmodSync(cfg, 0o640) } catch {}
@@ -109,6 +119,17 @@ const settle = (extra = {}) => spawnSync(SETTLE, [], {
     ...extra,
   },
 })
+const work = (extra = {}) => spawnSync(WORK, [], {
+  encoding: 'utf8',
+  env: {
+    PATH: `${bin}:${process.env.PATH}`,
+    OCC: occ,
+    IDEA_CRON: cron,
+    IDEA_UPDATE_STATE_DIR: stateDir,
+    ...extra,
+  },
+})
+const cronRuns = () => existsSync(cronLog) ? readFileSync(cronLog, 'utf8').trim().split('\n').filter(Boolean).length : 0
 const occCalls = () => existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').filter(Boolean) : []
 const writeState = (prev) => { mkdirSync(stateDir, { recursive: true }); writeFileSync(state, `# test\nprevious=${prev}\n`) }
 const stateLine = () => readFileSync(state, 'utf8').split('\n').find(l => l.startsWith('previous='))
@@ -231,19 +252,111 @@ it('prepare does not pin when staging fails (checksum mismatch fails closed firs
   assert.ok(!existsSync(state))
 })
 
-// ---- settle: restore ----
+// ---- Axle's should-fixes (S1, S2, S3, S5, NEXTCLOUD_CONFIG_DIR) ----
 
-it('settle restores previous=unset with occ config:system:delete and removes the state file', () => {
+it('S3: a state file next to a non-false appstoreenabled is stale: logged, re-recorded with the current value, then pinned', { skip: NO_PHP }, () => {
+  for (const [line, want] of [["  'appstoreenabled' => true,\n", 'previous=bool:true'], ['', 'previous=unset']]) {
+    writeState('bool:false')
+    writeFileSync(cfg, configWith(line))
+    const r = pin()
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /is stale .*recording the current value again/)
+    assert.equal(stateLine(), want)
+    assert.equal(readConfig().appstoreenabled, false)
+  }
+})
+
+it('S3: with the pin in effect (false) the existing state file is still kept', { skip: NO_PHP }, () => {
   writeState('unset')
-  const r = settle()
+  writeFileSync(cfg, configWith("  'appstoreenabled' => false,\n"))
+  const r = pin()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.doesNotMatch(r.stdout, /stale/)
+  assert.equal(stateLine(), 'previous=unset')
+})
+
+it('S1: refuses to truncate config.php without room for content + 10 KB (nothing written to config.php)', { skip: NO_PHP }, () => {
+  const before = readFileSync(cfg, 'utf8')
+  const r = pin({ IDEA_PIN_TEST_DISK_FREE: '10000' })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /does not have enough free space for config\.php/)
+  assert.equal(readFileSync(cfg, 'utf8'), before)
+  // Plenty of space: writes.
+  assert.equal(pin({ IDEA_PIN_TEST_DISK_FREE: '100000000' }).status, 0)
+  assert.equal(readConfig().appstoreenabled, false)
+})
+
+it('S2: refuses when config_is_read_only is set in config.php or another *.config.php', { skip: NO_PHP }, () => {
+  writeFileSync(cfg, configWith("  'config_is_read_only' => true,\n"))
+  let r = prep()
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /app store pin failed: config_is_read_only is set in config\.php/)
+  assert.doesNotMatch(readFileSync(cfg, 'utf8'), /appstoreenabled/)
+  assert.ok(!existsSync(state))
+  writeFileSync(cfg, configWith())
+  writeFileSync(join(html, 'config', 'ro.config.php'), "<?php\n$CONFIG = array ('config_is_read_only' => true);\n")
+  r = pin()
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /ro\.config\.php sets config_is_read_only/)
+  assert.ok(!existsSync(state))
+})
+
+it('S2: config_is_read_only false is fine', { skip: NO_PHP }, () => {
+  writeFileSync(cfg, configWith("  'config_is_read_only' => false,\n"))
+  assert.equal(pin().status, 0)
+})
+
+it('S5: refuses a config.php that is not plain literals (code would be written back frozen)', { skip: NO_PHP }, () => {
+  for (const code of [
+    "  'dbpassword' => getenv('X') ?: 'fallback',\n",
+    "  'datadirectory' => __DIR__ . '/data',\n",
+    "  'x' => PHP_VERSION,\n",
+  ]) {
+    writeFileSync(cfg, configWith(code))
+    const before = readFileSync(cfg, 'utf8')
+    const r = pin()
+    assert.equal(r.status, 1, code + r.stdout + r.stderr)
+    assert.match(r.stdout, /config\.php is not plain literals/)
+    assert.equal(readFileSync(cfg, 'utf8'), before)
+    assert.ok(!existsSync(state))
+  }
+})
+
+it('S5: accepts what Nextcloud writes (nested arrays, ints, floats, negatives, null, comments, [] and $CONFIG[...] lines)', { skip: NO_PHP }, () => {
+  writeFileSync(cfg, "<?php\n// comment\n$CONFIG = array (\n  'version' => '31.0.14.1',\n  'trusted_domains' => \n  array (\n    0 => 'localhost',\n    1 => 'idea04',\n  ),\n  'loglevel' => 2,\n  'ratio' => 1.5,\n  'neg' => -1,\n  'nothing' => NULL,\n  'list' => ['a', 'b'],\n);\n$CONFIG['installed'] = true;\n")
+  const r = pin()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const c = readConfig()
+  assert.equal(c.appstoreenabled, false)
+  assert.deepEqual(c.trusted_domains, ['localhost', 'idea04'])
+  assert.equal(c.neg, -1)
+  assert.equal(c.installed, true)
+})
+
+it('refuses a NEXTCLOUD_CONFIG_DIR that is not the directory of config.php; accepts the same one', { skip: NO_PHP }, () => {
+  let r = pin({ NEXTCLOUD_CONFIG_DIR: join(dir, 'elsewhere') })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /NEXTCLOUD_CONFIG_DIR=.* is not the directory of/)
+  assert.ok(!existsSync(state))
+  r = pin({ NEXTCLOUD_CONFIG_DIR: join(html, 'config') + '/' })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+})
+
+// ---- work: restore (Steve's S4 decision); settle: read-only ----
+
+it('work restores previous=unset with occ config:system:delete, removes the state file, then runs cron.php', () => {
+  writeState('unset')
+  const r = work()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(occCalls(), ['config:system:delete appstoreenabled'])
   assert.ok(!existsSync(state))
   assert.match(r.stdout, /restored appstoreenabled \(previous=unset\)/)
-  assert.match(r.stdout, /settled/)
+  assert.ok(r.stdout.indexOf('restored appstoreenabled') < r.stdout.indexOf('cron.php run 1'), 'restore comes before cron.php')
+  assert.equal(cronRuns(), 1)
+  assert.match(r.stdout, /work done/)
 })
 
-it('settle restores booleans, integers and strings with the right occ --type', () => {
+it('work restores booleans, integers and strings with the right occ --type', () => {
   for (const [prev, want] of [
     ['bool:true', 'config:system:set appstoreenabled --value=true --type=boolean'],
     ['bool:false', 'config:system:set appstoreenabled --value=false --type=boolean'],
@@ -252,59 +365,75 @@ it('settle restores booleans, integers and strings with the right occ --type', (
   ]) {
     rmSync(calls, { force: true })
     writeState(prev)
-    const r = settle()
+    const r = work()
     assert.equal(r.status, 0, prev + ': ' + r.stdout + r.stderr)
     assert.deepEqual(occCalls(), [want], prev)
     assert.ok(!existsSync(state), prev)
   }
 })
 
-it('settle with no state file leaves appstoreenabled alone (nothing was pinned)', () => {
-  const r = settle()
+it('work with no state file leaves appstoreenabled alone (nothing was pinned)', () => {
+  const r = work()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(occCalls(), [])
   assert.match(r.stdout, /no state file, appstoreenabled left as is/)
 })
 
-it('settle "not yet" keeps the pin (background migrations run with the app store off)', () => {
-  writeState('unset')
-  const r = settle({ IDEA_HC_BODY: MAINT })
-  assert.equal(r.status, 3, r.stdout + r.stderr)
-  assert.deepEqual(occCalls(), [])
-  assert.ok(existsSync(state))
+it('a cron.php failure in work cannot leave the pin on (restore already ran)', () => {
+  writeState('bool:true')
+  const r = work({ IDEA_CRON_FAIL: '1' })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /ERROR: cron.php failed/)
+  assert.deepEqual(occCalls(), ['config:system:set appstoreenabled --value=true --type=boolean'])
+  assert.ok(!existsSync(state))
 })
 
-it('a failed restore is an ERROR (SETTLE_FAILED, no rollback), keeps the state file, and the next settle retries', () => {
+it('a failed restore fails work before cron.php (migrationsPending, no rollback), keeps the state file, and a re-run of work retries', () => {
   writeState('bool:true')
-  let r = settle({ IDEA_OCC_CONFIG_FAIL: '1' })
+  let r = work({ IDEA_OCC_CONFIG_FAIL: '1' })
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /ERROR: occ config:system:set appstoreenabled true failed/)
   assert.ok(existsSync(state))
-  r = settle()
+  assert.equal(cronRuns(), 0)
+  r = work()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.ok(!existsSync(state))
 })
 
-it('a corrupt state file is an ERROR and is not removed', () => {
+it('a corrupt state file is an ERROR in work and is not removed', () => {
   writeState('maybe')
-  let r = settle()
+  let r = work()
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /no valid previous= line/)
   assert.ok(existsSync(state))
   writeState('int:12x')
-  r = settle()
+  r = work()
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /bad integer/)
 })
 
-it('round trip: prepare pins, settle restores the recorded value', { skip: NO_PHP }, () => {
+it('settle makes no writes: with a state file present it neither calls occ config nor removes the file', () => {
+  writeState('unset')
+  for (const body of [READY, MAINT]) {
+    const r = settle({ IDEA_HC_BODY: body })
+    assert.ok(r.status === 0 || r.status === 3, r.stdout + r.stderr)
+    assert.deepEqual(occCalls(), [])
+    assert.ok(existsSync(state))
+    assert.equal(readFileSync(state, 'utf8'), '# test\nprevious=unset\n')
+  }
+})
+
+it('round trip: prepare pins, work restores the recorded value, settle then changes nothing', { skip: NO_PHP }, () => {
   writeFileSync(cfg, configWith("  'appstoreenabled' => true,\n"))
   assert.equal(prep().status, 0)
   assert.equal(readConfig().appstoreenabled, false)
-  const r = settle()
+  let r = work()
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.deepEqual(occCalls(), ['config:system:set appstoreenabled --value=true --type=boolean'])
   assert.ok(!existsSync(state))
+  r = settle()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.deepEqual(occCalls(), ['config:system:set appstoreenabled --value=true --type=boolean'])
 })
 
 // ---- wiring / docs (string checks, repo pattern) ----
@@ -318,9 +447,14 @@ it('state file lives under custom_apps on the data volume (kept by the image upg
   assert.doesNotMatch(prepSrc + libSrc, /appstoreenabled\.state.*\/tmp|\/tmp.*appstoreenabled/)
 })
 
-it('settle restores only on the settled path, right before exit 0', () => {
-  const body = readFileSync(SETTLE, 'utf8').split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
-  assert.match(body, /idea_appstore_restore\n+idea_log "settled"\nexit 0\s*$/)
+it('work calls idea_appstore_restore before its cron.php loop; settle has no restore and no occ config write', () => {
+  const strip = (f) => readFileSync(f, 'utf8').split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+  const w = strip(WORK)
+  assert.ok(w.indexOf('idea_appstore_restore') > 0 && w.indexOf('idea_appstore_restore') < w.indexOf('while [ "$run" -le "$max" ]'))
+  const st = strip(SETTLE)
+  assert.doesNotMatch(st, /idea_appstore_restore|config:system|appstoreenabled|idea-update-state|STATE/)
+  // Its only rm is its own mktemp file.
+  assert.deepEqual(st.match(/rm -f [^\n']*/g), ['rm -f "$body"'])
 })
 
 it('compose mounts the whole hooks dir (appstore-pin.php is visible at /idea/hooks) and docs describe the pin and the >= rule', () => {
