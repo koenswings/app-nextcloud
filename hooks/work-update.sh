@@ -22,7 +22,10 @@
 # If jobs remain after the last run, exit 3 with a "not yet:" line.
 # A cron.php failure is "ERROR:" and exit 1.
 #
-# Env: OCC, IDEA_CRON, IDEA_WORK_CRON_RUNS, IDEA_PENDING_JOB_PATTERN
+# Also restores appstoreenabled from prepare's state file first (see below).
+#
+# Env: OCC, IDEA_CRON, IDEA_WORK_CRON_RUNS, IDEA_PENDING_JOB_PATTERN,
+#      IDEA_UPDATE_STATE_DIR
 set -eu
 
 HOOKS_DIR=$(dirname "$0")
@@ -31,6 +34,14 @@ IDEA_UPDATE_LOG_PREFIX=idea-work-update
 . "$HOOKS_DIR/update-lib.sh"
 
 idea_refuse_argv "$@"
+
+# First: undo prepare's app store pin (Steve's S4 decision, 2026-11-16; Axle
+# review Q4). Its only job was to stop occ upgrade at Start from pulling
+# app-store apps; once verify has passed the hop can no longer roll back, so it
+# is restored here, before cron.php, so a cron failure cannot leave it on.
+# A failed restore is a non-zero exit like any work failure: migrationsPending,
+# no rollback, and Resume re-runs work, which retries the restore.
+idea_appstore_restore
 
 max=${IDEA_WORK_CRON_RUNS:-3}
 case "$max" in

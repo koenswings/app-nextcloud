@@ -21,4 +21,4 @@ Proposal: `koenswings/idea` `proposals/2026-10-14-teacher-usb-sticks.md` §4.
 - Idempotent; runs serialised by a lock dir (`/tmp/idea-usb-sync.lock`); waits for occ (bounded, `IDEA_OCC_WAIT`);
   fail-open (always exit 0; nothing deleted if occ is unusable; `/mnt/idea-usb` absent → skip).
 
-Tests: `node --test tests/` (`tests/usb-sync.test.mjs`, fake occ).
+Tests: `node --test tests/*.test.mjs` (`tests/usb-sync.test.mjs`, fake occ).
