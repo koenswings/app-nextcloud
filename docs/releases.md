@@ -43,7 +43,7 @@ is still named `kid/nc-5.0`.
 - **Prepare / verify / work / settle:** unchanged from 4.0 and 5.0 (`x-app.update.prepare`,
   `x-app.update.verify`, `x-app.update.work`, `x-app.update.settle`; same scripts, users,
   timeouts and interval). `hooks/update-targets` gains `6.0-35.0.3  12.0.2  1.0.0`, and
-  verify expects richdocuments 12.0.2 and idea_usage 1.0.0 enabled.
+  verify expects richdocuments 12.0.2 or newer and idea_usage 1.0.0 enabled.
 - **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
   Re-measure on a pool Pi before locking the release.
 - **Engine floor:** 6.0 declares the same `x-app.update` stages, and it needs them:
@@ -54,6 +54,11 @@ is still named `kid/nc-5.0`.
   `prepare`, `occ upgrade` disables Office and idea_usage on an offline kit.
   The Pi proof waits for #456 L. Kits on an Engine older than 41ba677 must never
   get Nextcloud 2.0+ bundles (agent-app-dev `docs/app-bundle-integrity.md`).
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** Nextcloud's own database upgrade on the first start of 6.0 (34.0.6 →
 35.0.3), after Prepare has staged the new apps. Files and accounts are kept.
