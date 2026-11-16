@@ -55,8 +55,8 @@ is still named `kid/nc-5.0`.
   The Pi proof waits for #456 L. Kits on an Engine older than 41ba677 must never
   get Nextcloud 2.0+ bundles (agent-app-dev `docs/app-bundle-integrity.md`).
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
