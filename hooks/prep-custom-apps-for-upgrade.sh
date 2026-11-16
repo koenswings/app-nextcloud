@@ -33,12 +33,32 @@
 # Does not invoke occ. Unexpected argv is an error (do not ignore
 # apache2-foreground).
 #
+# App store pin (Steve's decision 2026-11-16, Axle review §#456 L option (a)):
+# after the apps are staged, hooks/appstore-pin.php sets appstoreenabled=false in
+# config/config.php, so the image entrypoint's `occ upgrade` cannot pull a newer
+# richdocuments (or anything else) from the app store, online or offline. It is
+# not `occ config:system:set` because prepare has no database (--no-deps), runs
+# as root and sees a tree that needs an upgrade; the PHP edit mirrors Nextcloud's
+# own Config::writeData(). The previous value (or "unset") goes to a state file
+# on the App's data volume, written before config.php changes:
+#   container: /var/www/html/custom_apps/.idea-update-state/appstoreenabled.state
+#   host:      ./data/nextcloud/custom_apps/.idea-update-state/appstoreenabled.state
+# (custom_apps is kept by the image's upgrade rsync; a top-level dir would be
+# deleted. Dot entries are not apps.) First record wins on a retry. settle
+# restores the value with occ and removes the file (update-lib.sh). Rollback:
+# the Engine restores the snapshot (snapshotExclude: []), which holds config.php
+# and the state dir from before prepare, so the old version comes back with its
+# own appstoreenabled and no state file. See docs/releases.md "App store pin".
+#
 # Env:
 #   IDEA_BUNDLED_APPS          default /idea-bundled-apps
 #   IDEA_CUSTOM_APPS           default /var/www/html/custom_apps
 #   IDEA_UPGRADE_BACKUP        default $IDEA_CUSTOM_APPS/.idea-upgrade-backup
 #   IDEA_UPGRADE_BACKUP_TS     optional fixed stamp (tests; refuse if dest exists)
 #   IDEA_WWW_UID / IDEA_WWW_GID  default 33 (www-data); chown only when running as root
+#   IDEA_NC_CONFIG             default /var/www/html/config/config.php
+#   IDEA_UPDATE_STATE_DIR      default $IDEA_CUSTOM_APPS/.idea-update-state
+#   IDEA_PHP                   default php
 set -eu
 
 log() { echo "idea-prep-custom-apps: $*"; }
@@ -189,7 +209,10 @@ for tgz in "$SRC"/*.tar.gz; do
 		# dest is $BACKUP/${app}-${old_ver}-${stamp}; keep the parsed old_ver from above
 		old_ver_field=$old_ver
 	fi
-	printf 'DO\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$app" "$tgz" "$stamp" "$dest" "$want_ver" "$want_max" "$old_ver_field" >> "$plan"
+	# Empty fields are written as "-": tab is IFS whitespace, so `read` would
+	# collapse an empty field and shift the rest (an app not yet in custom_apps
+	# then failed with "vanished before backup").
+	printf 'DO\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$app" "$tgz" "$stamp" "${dest:--}" "$want_ver" "$want_max" "${old_ver_field:--}" >> "$plan"
 done
 
 # Pass 2: only now move and extract, after every dest has been checked.
@@ -200,6 +223,8 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 		continue
 	fi
 	[ "$kind" = DO ] || die "bad plan line: $kind"
+	[ "$dest" != - ] || dest=
+	[ "$old_ver" != - ] || old_ver=
 
 	mkdir -p "$BACKUP" || die "cannot create $BACKUP"
 	own "$BACKUP"
@@ -249,6 +274,23 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 	fi
 	log "installed $app $want_ver (max-version $want_max) from $(basename "$tgz")"
 done < "$plan"
+
+# App store pin (after staging, before Start runs occ upgrade).
+NC_CONFIG="${IDEA_NC_CONFIG:-/var/www/html/config/config.php}"
+STATE_DIR="${IDEA_UPDATE_STATE_DIR:-$DST/.idea-update-state}"
+PIN="$(dirname "$0")/appstore-pin.php"
+[ -f "$PIN" ] || die "appstore-pin.php missing next to $0"
+mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR"
+own "$STATE_DIR"
+pin_status=0
+pin_out=$("${IDEA_PHP:-php}" "$PIN" "$NC_CONFIG" "$STATE_DIR/appstoreenabled.state" 2>&1) || pin_status=$?
+[ -z "$pin_out" ] || printf '%s\n' "$pin_out"
+if [ "$pin_status" -ne 0 ]; then
+	# The Engine keeps the last ERROR: line, so repeat the pin's reason in ours.
+	why=$(printf '%s\n' "$pin_out" | sed -n 's/.*ERROR: //p' | tail -n 1)
+	die "app store pin failed: ${why:-php exited $pin_status}"
+fi
+own "$STATE_DIR"
 
 log "done"
 exit 0

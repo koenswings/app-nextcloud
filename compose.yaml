@@ -48,16 +48,24 @@ x-app:
   # the snapshot; Resume starts from Swap on the old tree). Does not run occ
   # or the image entrypoint. Stages bundled richdocuments + idea_usage
   # (versions from the tarballs / hooks/update-targets) into custom_apps.
+  # Then pins appstoreenabled=false in config.php (hooks/appstore-pin.php) so
+  # occ upgrade never pulls apps from the app store, online or offline; the
+  # previous value (or "unset") is recorded first in
+  # ./data/nextcloud/custom_apps/.idea-update-state/appstoreenabled.state.
+  # A rollback restores the snapshot, which holds config.php and that file.
   # verify: once after Health, docker compose exec -T -u 33. Exit 0 passes;
   # anything else is VERIFY_FAILED and rolls back. Checks status.php
   # (installed, maintenance false, needsDbUpgrade false) and that
-  # richdocuments is enabled at the bundled version and idea_usage is enabled.
+  # richdocuments is enabled at the bundled version or newer (semver >=)
+  # and idea_usage is enabled at its exact version.
   # work: once after verify, exec -T -u 33, runs cron.php (Nextcloud: 2-3
   # times after a major). Non-zero or timeout stops the path with
   # migrationsPending, no rollback.
   # settle: polled after work, exec -T -u 33; exit 0 settled, 3 not yet,
   # other error. Read-only probe (status.php + pending upgrade jobs). Does
   # not run cron.php. Hook versions are parameterised (tarball / IDEA_APP_VERSION).
+  # Its one write, only when settled: restore the recorded appstoreenabled
+  # with occ (delete if it was unset) and remove the state file.
   update:
     prepare:
       service: nextcloud-app
