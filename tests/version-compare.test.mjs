@@ -3,7 +3,7 @@
  * richdocuments version or newer" rule, Steve's decision 2026-11-16).
  * Runs under the default awk and, when present, mawk (the awk in the Debian-based
  * official Nextcloud image) and gawk.
- * Run: node --test tests/
+ * Run: node --test tests/*.test.mjs
  */
 import { it } from 'node:test'
 import assert from 'node:assert/strict'

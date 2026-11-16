@@ -44,8 +44,10 @@
 #   container: /var/www/html/custom_apps/.idea-update-state/appstoreenabled.state
 #   host:      ./data/nextcloud/custom_apps/.idea-update-state/appstoreenabled.state
 # (custom_apps is kept by the image's upgrade rsync; a top-level dir would be
-# deleted. Dot entries are not apps.) First record wins on a retry. settle
-# restores the value with occ and removes the file (update-lib.sh). Rollback:
+# deleted. Dot entries are not apps.) First record wins on a retry while the
+# pin is in effect; a state file next to a non-false value is stale and is
+# rewritten. work (first stage after verify) restores the value with occ and
+# removes the file (update-lib.sh); settle stays read-only. Rollback:
 # the Engine restores the snapshot (snapshotExclude: []), which holds config.php
 # and the state dir from before prepare, so the old version comes back with its
 # own appstoreenabled and no state file. See docs/releases.md "App store pin".
