@@ -25,7 +25,8 @@ before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
   Prepare re-stages the same tarballs (idempotent) and pins `appstoreenabled=false`, verify
   checks Nextcloud is up with richdocuments 11.1.3 or newer and idea_usage 1.0.0 enabled, work
-  runs `cron.php`, work first restores `appstoreenabled` and then runs `cron.php`, and settle is the read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  first restores `appstoreenabled` and then runs `cron.php`, and settle is the read-only
+  probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
   itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
   4.0 instance those stages change nothing lasting for this hop (Nextcloud and the bundled
   apps do not change; the app store pin is set in prepare and restored in work).
