@@ -91,17 +91,19 @@ the 34 hop and before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31
   on the App Disk. A minor update would get only that snapshot.
 - **x-app.update:** the same `x-app.update.prepare`, `x-app.update.verify`, `x-app.update.work`
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
-  Prepare re-stages the same tarballs (idempotent), verify checks Nextcloud is up with
-  richdocuments 11.1.3 and idea_usage 1.0.0 enabled, work runs `cron.php`, and settle is the
-  read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  Prepare re-stages the same tarballs (idempotent) and pins `appstoreenabled=false`, verify
+  checks Nextcloud is up with richdocuments 11.1.3 or newer and idea_usage 1.0.0 enabled, work
+  runs `cron.php`, and settle is the read-only probe that restores `appstoreenabled` once
+  settled. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
   itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
-  4.0 instance those stages are no-ops for this hop (Nextcloud and the bundled apps do not
-  change).
+  4.0 instance those stages change nothing lasting for this hop (Nextcloud and the bundled
+  apps do not change; the app store pin is set in prepare and restored in settle).
 - **Engine floor:** 5.0 declares those stages, so Engine 41ba677 (engine#463) and later
   refuse the bundle at Check with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456
   stages land (#456 L). A Pi proof on the pool's pre-#463 Engine 80ba4af is still a valid
-  proof of the MariaDB upgrade, from a fresh 4.0 install, because the stages are no-ops
-  and `mariadb-upgrade` is the image entrypoint. Field kits still need #456 L: the 2.0–4.0
+  proof of the MariaDB upgrade, from a fresh 4.0 install, because the stages change nothing lasting
+  and `mariadb-upgrade` is the image entrypoint. (80ba4af runs no stage, so it neither pins
+  nor restores `appstoreenabled`; that proof checks the database step, not the pin.) Field kits still need #456 L: the 2.0–4.0
   hops that precede 5.0 are not safe without stages, and 41ba677+ refuses 5.0 itself.
   Kits on an Engine older than 41ba677 must never get Nextcloud 2.0+ bundles
   (agent-app-dev `docs/app-bundle-integrity.md`).
@@ -134,6 +136,11 @@ and the way back is the Backup Disk backup.
 **Downtime:** not yet measured. The db healthcheck `start_period` is 900 s to cover
 `mariadb-upgrade`; Nextcloud `healthTimeout` is 600 s. Timings will be recorded on the
 80ba4af proof.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
@@ -204,6 +211,11 @@ this branch is now 5.0-34.0.6; this section is the 4.0 hop that 5.0 updates from
   The admin manual has no "Upgrade to Nextcloud 34" critical-changes page; Nextcloud
   maintainers say there are no critical admin changes. PHP 8.5 is provided by the official
   image. See idea#548 §8.5 for shipped apps (`office`, `files_lock`, `appstore`) and API notes.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** Nextcloud's own database upgrade on the first start of 4.0 (33.0.11 →
 34.0.6), after Prepare has staged the new apps. Files and accounts are kept.
@@ -273,6 +285,11 @@ reserved). No image publish, no tag. Stacked on the 2.0-32.0.15 draft.
 - **Snowflake `serverid` and MariaDB 11.8:** desk research in idea#548 §8.2 and §8.4. 33 does not
   require a configured `serverid` to upgrade (admin overview info only); this draft does
   not set one. MariaDB stays on 11.7.2.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** Nextcloud's own database upgrade on the first start of 3.0 (32.0.15 →
 33.0.11), after Prepare has staged the new apps. Files and accounts are kept.
@@ -335,6 +352,11 @@ reserved). No image publish, no tag.
   and does not re-check app versions (that is verify's job, because it rolls back).
 - **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
   Re-measure on a pool Pi before locking the release.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** Nextcloud's own database upgrade on the first start of 2.0 (31.0.14 →
 32.0.15), after Prepare has staged the new apps. Files and accounts are kept.
@@ -457,3 +479,52 @@ no database upgrade. On the first start of 1.5 the before-starting hooks enable 
 (the new `./config:/idea-config:ro` bind). Files and accounts are kept.
 
 **Tested:** `engine_tested` 431ab4c, 7-step on-Pi check (steps 1–6 on idea04, step 7 on idea03; app 1.5-31.0.1 at af5f289). Earlier checks on idea03 at c460aca, 1224f54 and 3fa97b1 (app-nextcloud#22, #23).
+
+## App store pin (update stages, 2.0 and later)
+
+Decision: Steve, 2026-11-16, on Axle's recommendation (#456 L design input). Applies to every
+release that declares `x-app.update` stages (2.0-32.0.15 onwards). Both parts are bundle
+scripts; the Engine contract does not change.
+
+- **Why:** on a kit with internet, Nextcloud's app store can move richdocuments past the
+  bundled pin during `occ upgrade`, even with prepare. verify would then see a version it did
+  not expect and roll the hop back. The pin makes a hop give the same result online and
+  offline.
+- **Pin (prepare):** after staging the bundled apps, `hooks/prep-custom-apps-for-upgrade.sh`
+  runs `hooks/appstore-pin.php`, which sets `appstoreenabled => false` in
+  `config/config.php`. It is not `occ config:system:set`, because prepare runs with
+  `--no-deps` (no database), as root, on a tree that already needs an upgrade; the script
+  writes config.php exactly like Nextcloud's `Config::writeData()` (var_export, in place under
+  flock, mode 0640, owner kept). It refuses (prepare fails, the hop rolls back) when the pin
+  could not take effect: `appstoreenabled` set in another `config/*.config.php` or via
+  `NC_appstoreenabled`, a config.php without `version`, or a non-scalar value.
+- **State file:** `./data/nextcloud/custom_apps/.idea-update-state/appstoreenabled.state`
+  (container `/var/www/html/custom_apps/.idea-update-state/`, owned by 33). One line
+  `previous=unset | bool:true | bool:false | int:<n> | string:<base64>`. It is written
+  before config.php changes, so a crash in between leaves the real previous value recorded.
+  It lives under `custom_apps` because the image's upgrade rsync deletes unknown top-level
+  paths in `/var/www/html`; dot entries are not apps. First record wins: a retried prepare,
+  or a later hop's prepare when an earlier settle never finished, keeps the recorded value.
+- **Restore (settle):** only when settle is about to exit 0 (settled), as user 33 with the
+  database up: `occ config:system:delete appstoreenabled` if it was unset, otherwise
+  `occ config:system:set appstoreenabled --value=<v> --type=boolean|integer|string`; then the
+  state file is removed. No state file: nothing is touched. "not yet" keeps the pin, so
+  background migrations also run without the app store. A failed restore is an `ERROR:`
+  (`SETTLE_FAILED`, no rollback); Resume re-runs work and settle, which retries it.
+- **Rollback:** a prepare, Start, Health or verify failure restores the Engine snapshot.
+  `snapshotExclude: []`, so the snapshot holds `config/config.php` and
+  `custom_apps/.idea-update-state/` from before prepare: the old version starts with its own
+  `appstoreenabled` and no state file. The Engine runs no stage on rollback and the old
+  bundle's hooks are the old release's, so nothing else is needed or possible there. If the
+  rollback itself fails, the pre-update Backup Disk backup is from before prepare too. The
+  only way the old version could keep the pin is a restore that skips the snapshot; then the
+  app store stays off (harmless on an offline-first kit: Office and idea_usage are bundled)
+  until the next hop's settle restores the recorded value.
+- **Engines that ignore stages** (pre-#463, e.g. 80ba4af): prepare never runs, so nothing is
+  pinned and settle has nothing to restore. Engines 41ba677+ refuse stage bundles until #456 L.
+- **richdocuments >= rule (verify):** `hooks/verify-update.sh` accepts richdocuments at the
+  pinned (bundled) version or newer, by a semver compare (`idea_version_ge` in
+  `hooks/update-lib.sh`: numeric core parts, so 9.10.0 > 9.2.3; a pre-release is older than
+  its release; anything that is not a version fails). Older, missing or disabled still fails
+  (`VERIFY_FAILED`, rollback). A newer version is logged. idea_usage keeps its exact-version
+  check.

@@ -73,6 +73,7 @@ const run = (env = {}, args = []) => spawnSync(SCRIPT, args, {
     OCC: occ,
     IDEA_NC_HEALTH_URL: 'http://127.0.0.1/status.php',
     IDEA_HC_BODY: READY,
+    IDEA_UPDATE_STATE_DIR: join(dir, 'state'),
     ...env,
   },
 })

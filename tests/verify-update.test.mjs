@@ -123,10 +123,10 @@ it('exit 1 when installed is false, an app is missing or disabled, or richdocume
   assert.match(r.stdout, /installed is not true/)
   r = run({ IDEA_OCC_LIST: appList(RD_VER, USAGE_VER, false, true) })
   assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, new RegExp(`richdocuments ${RD_VER.replace(/\./g, '\\.')} is not enabled`))
+  assert.match(r.stdout, new RegExp(`richdocuments >= ${RD_VER.replace(/\./g, '\\.')} is not enabled`))
   r = run({ IDEA_OCC_LIST: appList('0.0.1', USAGE_VER, true, true) })
   assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, new RegExp(`richdocuments ${RD_VER.replace(/\./g, '\\.')} is not enabled`))
+  assert.match(r.stdout, new RegExp(`richdocuments 0\\.0\\.1 is older than the pinned ${RD_VER.replace(/\./g, '\\.')}`))
   r = run({ IDEA_OCC_LIST: appList(RD_VER, USAGE_VER, true, false) })
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /idea_usage is not enabled|idea_usage .+ is not enabled/)
@@ -142,4 +142,60 @@ it('refuses leftover argv', () => {
   const r = run({}, ['apache2-foreground'])
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /ERROR: unexpected arguments: apache2-foreground/)
+})
+
+// Steve's decision 2026-11-16 (Axle review §#456 L (b)): richdocuments at the pinned
+// version OR NEWER passes, by semver compare, not string compare.
+const bump = (v, i) => v.split('.').map((x, j) => j === i ? String(Number(x) + 1) : (j > i ? '0' : x)).join('.')
+const down = (v) => {
+  const p = v.split('.').map(Number)
+  for (let i = p.length - 1; i >= 0; i--) { if (p[i] > 0) { p[i] -= 1; return p.join('.') } }
+  return null
+}
+
+it('richdocuments newer than the pin passes (patch, minor and major bumps) and says so', () => {
+  for (const v of [bump(RD_VER, 2), bump(RD_VER, 1), bump(RD_VER, 0)]) {
+    const r = run({ IDEA_OCC_LIST: appList(v, USAGE_VER) })
+    assert.equal(r.status, 0, v + ': ' + r.stdout + r.stderr)
+    assert.match(r.stdout, new RegExp(`richdocuments ${v.replace(/\./g, '\\.')} is newer than the pinned`))
+    assert.match(r.stdout, /verified/)
+  }
+})
+
+it('compares numerically, not as strings: pin 9.2.3 accepts 9.10.0 and 10.0.0, refuses 9.2.2 and 9.1.10', () => {
+  const env = { IDEA_VERIFY_RICHDOCUMENTS_VERSION: '9.2.3', IDEA_VERIFY_IDEA_USAGE_VERSION: USAGE_VER }
+  for (const v of ['9.2.3', '9.2.10', '9.10.0', '10.0.0']) {
+    const r = run({ ...env, IDEA_OCC_LIST: appList(v, USAGE_VER) })
+    assert.equal(r.status, 0, v + ': ' + r.stdout + r.stderr)
+  }
+  for (const v of ['9.2.2', '9.1.10', '8.99.99', '9.2.3-beta.1']) {
+    const r = run({ ...env, IDEA_OCC_LIST: appList(v, USAGE_VER) })
+    assert.equal(r.status, 1, v + ': ' + r.stdout + r.stderr)
+    assert.match(r.stdout, /is older than the pinned 9\.2\.3/)
+  }
+})
+
+it('richdocuments older than the pin fails (VERIFY_FAILED)', () => {
+  const v = down(RD_VER)
+  const r = run({ IDEA_OCC_LIST: appList(v, USAGE_VER) })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /ERROR: richdocuments .* is older than the pinned/)
+})
+
+it('a newer richdocuments that is disabled still fails', () => {
+  const r = run({ IDEA_OCC_LIST: appList(bump(RD_VER, 1), USAGE_VER, false, true) })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /richdocuments >= .* is not enabled/)
+})
+
+it('a non-version richdocuments string fails rather than passing a string compare', () => {
+  const r = run({ IDEA_OCC_LIST: appList('master', USAGE_VER) })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /is not a version/)
+})
+
+it('idea_usage keeps the exact-version check (a newer idea_usage fails)', () => {
+  const r = run({ IDEA_OCC_LIST: appList(RD_VER, bump(USAGE_VER, 2)) })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, new RegExp(`idea_usage ${USAGE_VER.replace(/\./g, '\\.')} is not enabled`))
 })

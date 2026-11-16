@@ -19,7 +19,14 @@
 #   (the work step already ran the documented cron.php series).
 # App version / enabled checks live in verify (they roll back), not here.
 #
-# Env: IDEA_NC_HEALTH_URL, OCC, IDEA_PENDING_JOB_PATTERN
+# One write, only on the settled path (exit 0): the app store pin from prepare
+# is undone (update-lib.sh idea_appstore_restore: previous value from
+# custom_apps/.idea-update-state/appstoreenabled.state, restored with occ
+# config:system:set / config:system:delete, then the file is removed). No state
+# file means nothing to restore. A restore failure is ERROR (SETTLE_FAILED,
+# no rollback); Resume re-runs work and settle, which retries it.
+#
+# Env: IDEA_NC_HEALTH_URL, OCC, IDEA_PENDING_JOB_PATTERN, IDEA_UPDATE_STATE_DIR
 set -eu
 
 HOOKS_DIR=$(dirname "$0")
@@ -58,6 +65,10 @@ if [ "$jobs_status" -eq 2 ]; then
 elif [ "$jobs_status" -eq 3 ]; then
 	idea_not_yet "upgrade-job probe failed"
 fi
+
+# Last stage: undo prepare's app store pin, only once settled (not on "not yet",
+# so background migrations still run with the app store off).
+idea_appstore_restore
 
 idea_log "settled"
 exit 0
