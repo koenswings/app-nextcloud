@@ -39,7 +39,7 @@ false, richdocuments 8.8.3 and idea_usage 1.0.0 enabled, login per role, file ch
 Office open), and so did backup, list, verify and restore (the same checks passed again after
 the restore). Run 1 (Engine d366432) failed on engine#447 (Swap could not overwrite the
 bundle's relative symlinks) and rolled back automatically to 1.7-31.0.1 with its data.
-`engine_tested` in `app.yaml` is still the 1.7 value (cba91a6).
+`engine_tested` in `app.yaml` is `0038e31` (the Engine of this live 1.8 proof; full SHA `0038e31dc379447e02fb2644f5894fd9c8285acf`). The git tag `1.8-31.0.14` (`6a48eca`) is unchanged — this is metadata only.
 
 **Tags:** git tags `1.7-31.0.1` (1c8247b) and `1.8-31.0.14` (6a48eca) now exist.
 
