@@ -12,7 +12,9 @@
 #
 # Checks (all hard failures, no "not yet"):
 #   status.php: installed true, maintenance false, needsDbUpgrade false
-#   occ app:list Enabled: richdocuments at the expected version, idea_usage enabled
+#   occ app:list Enabled: richdocuments at the pinned version OR NEWER (semver
+#   compare, idea_version_ge in update-lib.sh), idea_usage enabled at its exact
+#   version (unchanged)
 # Expected versions come from update-lib.sh (tarball / IDEA_APP_VERSION table /
 # env), so this script is shared across 2.0, 3.0 and 4.0.
 #
@@ -58,8 +60,22 @@ fi
 enabled=$(printf '%s\n' "$list" | sed -n '/^Enabled:/,/^Disabled:/p')
 [ -n "$enabled" ] || idea_die "occ app:list had no Enabled: section"
 
-printf '%s\n' "$enabled" | grep -Eq "^  - richdocuments: ${IDEA_RD_VER}$" \
-	|| idea_die "richdocuments ${IDEA_RD_VER} is not enabled (occ app:list)"
+# richdocuments: the pinned (bundled) version or newer, by semver compare
+# (Steve's decision 2026-11-16). prepare pins appstoreenabled=false, so newer
+# should not happen; if the app store still moved it forward, that is accepted
+# rather than rolled back. Older, missing or disabled fails.
+rd_have=$(printf '%s\n' "$enabled" | sed -n 's/^  - richdocuments: \([^[:space:]]*\)[[:space:]]*$/\1/p' | head -n 1)
+[ -n "$rd_have" ] || idea_die "richdocuments >= ${IDEA_RD_VER} is not enabled (occ app:list)"
+rd_cmp=0
+idea_version_ge "$rd_have" "$IDEA_RD_VER" || rd_cmp=$?
+case "$rd_cmp" in
+	0) ;;
+	1) idea_die "richdocuments ${rd_have} is older than the pinned ${IDEA_RD_VER} (occ app:list)" ;;
+	*) idea_die "richdocuments version '${rd_have}' or pin '${IDEA_RD_VER}' is not a version" ;;
+esac
+if [ "$rd_have" != "$IDEA_RD_VER" ]; then
+	idea_log "richdocuments ${rd_have} is newer than the pinned ${IDEA_RD_VER}; accepted (>= rule)"
+fi
 printf '%s\n' "$enabled" | grep -Eq "^  - idea_usage:" \
 	|| idea_die "idea_usage is not enabled (occ app:list)"
 # idea_usage version is checked when we know it (shipped 1.0.0 on every hop).
@@ -68,5 +84,5 @@ if [ -n "$IDEA_USAGE_VER" ]; then
 		|| idea_die "idea_usage ${IDEA_USAGE_VER} is not enabled (occ app:list)"
 fi
 
-idea_log "verified (richdocuments ${IDEA_RD_VER}, idea_usage ${IDEA_USAGE_VER} enabled)"
+idea_log "verified (richdocuments ${rd_have} >= ${IDEA_RD_VER}, idea_usage ${IDEA_USAGE_VER} enabled)"
 exit 0

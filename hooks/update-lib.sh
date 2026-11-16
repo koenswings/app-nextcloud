@@ -144,3 +144,119 @@ idea_list_upgrade_jobs() {
 	fi
 	return 1
 }
+
+# Semantic-version compare (verify's "pinned version or newer" rule, Steve's
+# decision 2026-11-16, Axle review §#456 L option (b)).
+#   idea_version_ge HAVE WANT   return 0 if HAVE >= WANT, 1 if HAVE < WANT,
+#                               2 if either is not a version.
+# Rules (semver 2.0 precedence, extended to any number of numeric core parts):
+#   - build metadata (+...) is ignored; a leading "v" is allowed;
+#   - core parts compare numerically, missing parts count as 0 (9.2 == 9.2.0),
+#     so 10.0.0 > 9.10.0 > 9.2.10 > 9.2.3 (never a string compare);
+#   - equal cores: a release beats any pre-release (9.2.3 > 9.2.3-beta.1);
+#     pre-release identifiers compare numerically when both are numeric,
+#     otherwise in ASCII order, numeric < alphanumeric, shorter list first.
+idea_version_ge() {
+	awk -v a="$1" -v b="$2" '
+		function prep(v, parts,   core, pre, i, n, c) {
+			sub(/^[vV]/, "", v)
+			sub(/\+.*$/, "", v)
+			pre = ""
+			i = index(v, "-")
+			if (i > 0) { pre = substr(v, i + 1); v = substr(v, 1, i - 1); if (pre == "") return -1 }
+			if (v !~ /^[0-9]+(\.[0-9]+)*$/) return -1
+			if (pre != "" && pre !~ /^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$/) return -1
+			n = split(v, c, ".")
+			parts["n"] = n
+			for (i = 1; i <= n; i++) parts[i] = c[i] + 0
+			parts["pre"] = pre
+			return 0
+		}
+		function cmpid(x, y,   xn, yn) {
+			xn = (x ~ /^[0-9]+$/); yn = (y ~ /^[0-9]+$/)
+			if (xn && yn) { x += 0; y += 0; return x < y ? -1 : (x > y ? 1 : 0) }
+			if (xn) return -1
+			if (yn) return 1
+			return x < y ? -1 : (x > y ? 1 : 0)
+		}
+		BEGIN {
+			if (prep(a, A) < 0 || prep(b, B) < 0) exit 2
+			n = A["n"] > B["n"] ? A["n"] : B["n"]
+			for (i = 1; i <= n; i++) {
+				x = (i <= A["n"]) ? A[i] : 0
+				y = (i <= B["n"]) ? B[i] : 0
+				if (x > y) exit 0
+				if (x < y) exit 1
+			}
+			if (A["pre"] == B["pre"]) exit 0
+			if (A["pre"] == "") exit 0
+			if (B["pre"] == "") exit 1
+			na = split(A["pre"], pa, "."); nb = split(B["pre"], pb, ".")
+			for (i = 1; i <= na && i <= nb; i++) {
+				c = cmpid(pa[i], pb[i])
+				if (c > 0) exit 0
+				if (c < 0) exit 1
+			}
+			exit (na >= nb) ? 0 : 1
+		}
+	'
+}
+
+# App store pin restore (Steve's decision 2026-11-16, Axle review §#456 L (a)).
+# prepare (hooks/appstore-pin.php) pinned appstoreenabled=false and recorded the
+# previous value in the state file below; settle calls this once it is settled,
+# with the DB up and as user 33, so plain occ works:
+#   previous=unset        -> occ config:system:delete appstoreenabled
+#   previous=bool:<v>     -> occ config:system:set appstoreenabled --value=<v> --type=boolean
+#   previous=int:<n>      -> ... --value=<n> --type=integer
+#   previous=string:<b64> -> ... --value=<decoded> --type=string
+# Then the state file is removed. No state file: nothing was pinned (prepare did
+# not run, e.g. an Engine that ignores stages, or the value was already restored),
+# so appstoreenabled is left alone. Idempotent: occ set/delete can be repeated,
+# and the file is removed only after occ succeeded, so a retry (Resume after
+# migrationsPending re-runs settle) restores again. A failure is an ERROR, which
+# is SETTLE_FAILED: no rollback, the path stops and Resume retries.
+# Env: IDEA_UPDATE_STATE_DIR (default /var/www/html/custom_apps/.idea-update-state)
+idea_appstore_state_file() {
+	printf '%s/appstoreenabled.state' "${IDEA_UPDATE_STATE_DIR:-/var/www/html/custom_apps/.idea-update-state}"
+}
+
+idea_appstore_restore() {
+	state=$(idea_appstore_state_file)
+	if [ ! -e "$state" ]; then
+		idea_log "app store pin: no state file, appstoreenabled left as is"
+		return 0
+	fi
+	prev=$(sed -n 's/^previous=//p' "$state" | head -n 1)
+	case "$prev" in
+		unset)
+			idea_run_occ config:system:delete appstoreenabled >/dev/null \
+				|| idea_die "occ config:system:delete appstoreenabled failed (app store stays pinned off)"
+			;;
+		bool:true|bool:false)
+			idea_run_occ config:system:set appstoreenabled --value="${prev#bool:}" --type=boolean >/dev/null \
+				|| idea_die "occ config:system:set appstoreenabled ${prev#bool:} failed (app store stays pinned off)"
+			;;
+		int:*)
+			n=${prev#int:}
+			case "$n" in
+				''|-|*[!0-9-]*|?*-*) idea_die "app store pin state has a bad integer: $prev" ;;
+			esac
+			idea_run_occ config:system:set appstoreenabled --value="$n" --type=integer >/dev/null \
+				|| idea_die "occ config:system:set appstoreenabled $n failed (app store stays pinned off)"
+			;;
+		string:*)
+			if ! s=$(printf '%s' "${prev#string:}" | base64 -d 2>/dev/null); then
+				idea_die "app store pin state has bad base64: $prev"
+			fi
+			idea_run_occ config:system:set appstoreenabled --value="$s" --type=string >/dev/null \
+				|| idea_die "occ config:system:set appstoreenabled (string) failed (app store stays pinned off)"
+			;;
+		*)
+			idea_die "app store pin state $state has no valid previous= line (got '${prev}')"
+			;;
+	esac
+	rm -f "$state" || idea_die "cannot remove $state after restoring appstoreenabled"
+	case "$prev" in string:*) shown=string ;; *) shown=$prev ;; esac
+	idea_log "app store pin: restored appstoreenabled (previous=${shown}) and removed the state file"
+}
