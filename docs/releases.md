@@ -23,17 +23,19 @@ before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
   on the App Disk. A minor update would get only that snapshot.
 - **x-app.update:** the same `x-app.update.prepare`, `x-app.update.verify`, `x-app.update.work`
   and `x-app.update.settle` steps as 4.0 (same scripts, users, timeouts and interval).
-  Prepare re-stages the same tarballs (idempotent), verify checks Nextcloud is up with
-  richdocuments 11.1.3 and idea_usage 1.0.0 enabled, work runs `cron.php`, and settle is the
-  read-only probe. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
+  Prepare re-stages the same tarballs (idempotent) and pins `appstoreenabled=false`, verify
+  checks Nextcloud is up with richdocuments 11.1.3 or newer and idea_usage 1.0.0 enabled, work
+  runs `cron.php`, and settle is the read-only probe that restores `appstoreenabled` once
+  settled. `hooks/update-targets` gains `5.0-34.0.6  11.1.3  1.0.0`. The MariaDB step
   itself needs no App hook: it is the image entrypoint's own `mariadb-upgrade`. On a correct
-  4.0 instance those stages are no-ops for this hop (Nextcloud and the bundled apps do not
-  change).
+  4.0 instance those stages change nothing lasting for this hop (Nextcloud and the bundled
+  apps do not change; the app store pin is set in prepare and restored in settle).
 - **Engine floor:** 5.0 declares those stages, so Engine 41ba677 (engine#463) and later
   refuse the bundle at Check with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456
   stages land (#456 L). A Pi proof on the pool's pre-#463 Engine 80ba4af is still a valid
-  proof of the MariaDB upgrade, from a fresh 4.0 install, because the stages are no-ops
-  and `mariadb-upgrade` is the image entrypoint. Field kits still need #456 L: the 2.0–4.0
+  proof of the MariaDB upgrade, from a fresh 4.0 install, because the stages change nothing lasting
+  and `mariadb-upgrade` is the image entrypoint. (80ba4af runs no stage, so it neither pins
+  nor restores `appstoreenabled`; that proof checks the database step, not the pin.) Field kits still need #456 L: the 2.0–4.0
   hops that precede 5.0 are not safe without stages, and 41ba677+ refuses 5.0 itself.
   Kits on an Engine older than 41ba677 must never get Nextcloud 2.0+ bundles
   (agent-app-dev `docs/app-bundle-integrity.md`).
@@ -66,6 +68,11 @@ and the way back is the Backup Disk backup.
 **Downtime:** not yet measured. The db healthcheck `start_period` is 900 s to cover
 `mariadb-upgrade`; Nextcloud `healthTimeout` is 600 s. Timings will be recorded on the
 80ba4af proof.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.

@@ -42,8 +42,9 @@ x-app:
     bundle; if that fails (ROLLBACK FAILED), restore from the Backup Disk backup.
     Files and accounts are kept.
   # Engine update hooks (Axle addendum, 2026-11-15; idea#548 merged).
-  # Engine floor: these four stages are declared (same as 4.0). They are no-ops
-  # on a correct 4.0 instance, but Engine 41ba677+ (engine#463) still refuses
+  # Engine floor: these four stages are declared (same as 4.0). They change
+  # nothing lasting on a correct 4.0 instance (prepare's app store pin is
+  # restored by settle), but Engine 41ba677+ (engine#463) still refuses
   # this bundle with UPDATE_STAGES_UNSUPPORTED until #456 L. A Pi proof on
   # pre-#463 Engine 80ba4af is valid because mariadb-upgrade is the image
   # entrypoint. Field kits still need #456 L.
