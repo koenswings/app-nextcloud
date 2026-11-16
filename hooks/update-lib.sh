@@ -204,8 +204,8 @@ idea_version_ge() {
 
 # App store pin restore (Steve's decision 2026-11-16, Axle review §#456 L (a)).
 # prepare (hooks/appstore-pin.php) pinned appstoreenabled=false and recorded the
-# previous value in the state file below; settle calls this once it is settled,
-# with the DB up and as user 33, so plain occ works:
+# previous value in the state file below; work (work-update.sh) calls this
+# first, right after verify, with the DB up and as user 33, so plain occ works:
 #   previous=unset        -> occ config:system:delete appstoreenabled
 #   previous=bool:<v>     -> occ config:system:set appstoreenabled --value=<v> --type=boolean
 #   previous=int:<n>      -> ... --value=<n> --type=integer
@@ -214,8 +214,8 @@ idea_version_ge() {
 # not run, e.g. an Engine that ignores stages, or the value was already restored),
 # so appstoreenabled is left alone. Idempotent: occ set/delete can be repeated,
 # and the file is removed only after occ succeeded, so a retry (Resume after
-# migrationsPending re-runs settle) restores again. A failure is an ERROR, which
-# is SETTLE_FAILED: no rollback, the path stops and Resume retries.
+# migrationsPending re-runs work) restores again. A failure is an ERROR, which
+# in work means migrationsPending: no rollback, the path stops and Resume retries.
 # Env: IDEA_UPDATE_STATE_DIR (default /var/www/html/custom_apps/.idea-update-state)
 idea_appstore_state_file() {
 	printf '%s/appstoreenabled.state' "${IDEA_UPDATE_STATE_DIR:-/var/www/html/custom_apps/.idea-update-state}"

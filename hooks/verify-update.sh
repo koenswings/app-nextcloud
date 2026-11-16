@@ -80,7 +80,7 @@ printf '%s\n' "$enabled" | grep -Eq "^  - idea_usage:" \
 	|| idea_die "idea_usage is not enabled (occ app:list)"
 # idea_usage version is checked when we know it (shipped 1.0.0 on every hop).
 if [ -n "$IDEA_USAGE_VER" ]; then
-	printf '%s\n' "$enabled" | grep -Eq "^  - idea_usage: ${IDEA_USAGE_VER}$" \
+	printf '%s\n' "$enabled" | grep -Fxq "  - idea_usage: ${IDEA_USAGE_VER}" \
 		|| idea_die "idea_usage ${IDEA_USAGE_VER} is not enabled (occ app:list)"
 fi
 
