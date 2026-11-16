@@ -57,10 +57,17 @@ const seedOldApps = () => {
   writeFileSync(join(dst, 'idea_usage', 'OLD'), 'old-usage')
 }
 
+// The app store pin step (hooks/appstore-pin.php) needs php. Its own behaviour is
+// covered in tests/appstore-pin.test.mjs; here a seeded config.php keeps the
+// staging tests realistic, and a stub stands in when php is not installed.
+const HAS_PHP = spawnSync('php', ['-v'], { encoding: 'utf8' }).status === 0
+let cfg, phpStub
 const envFor = (extra = {}) => ({
   PATH: process.env.PATH,
   IDEA_BUNDLED_APPS: src,
   IDEA_CUSTOM_APPS: dst,
+  IDEA_NC_CONFIG: cfg,
+  ...(HAS_PHP ? {} : { IDEA_PHP: phpStub }),
   ...extra,
 })
 
@@ -72,6 +79,12 @@ beforeEach(async () => {
   dst = join(dir, 'data', 'nextcloud', 'custom_apps')
   mkdirSync(src, { recursive: true })
   mkdirSync(dst, { recursive: true })
+  mkdirSync(join(dir, 'data', 'nextcloud', 'config'), { recursive: true })
+  cfg = join(dir, 'data', 'nextcloud', 'config', 'config.php')
+  writeFileSync(cfg, "<?php\n$CONFIG = array (\n  'version' => '31.0.14.1',\n  'installed' => true,\n);\n")
+  phpStub = join(dir, 'php-stub')
+  writeFileSync(phpStub, '#!/bin/sh\necho "idea-appstore-pin: (stub) pinned appstoreenabled=false"\n')
+  spawnSync('chmod', ['755', phpStub])
   for (const f of [usageTarball, rdTarball, 'SHA256SUMS']) {
     cpSync(join(BUNDLED, f), join(src, f))
   }
@@ -131,6 +144,9 @@ it('checksum mismatch exits non-zero and leaves existing apps untouched', async 
   assert.match(readFileSync(join(dst, 'idea_usage/appinfo/info.xml'), 'utf8'), /max-version="31"/)
   assert.ok(existsSync(join(dst, 'richdocuments/OLD')))
   assert.ok(!existsSync(join(dst, '.idea-upgrade-backup')))
+  // Fail closed before the pin: config.php untouched, no state file.
+  assert.doesNotMatch(readFileSync(cfg, 'utf8'), /appstoreenabled/)
+  assert.ok(!existsSync(join(dst, '.idea-update-state')))
   const want = (await sha256(join(BUNDLED, rdTarball)))
   const sums = readFileSync(join(BUNDLED, 'SHA256SUMS'), 'utf8')
   assert.match(sums, new RegExp(`^${want}  ${rdTarball.replace(/\./g, '\\.')}$`, 'm'))
@@ -183,4 +199,16 @@ it('refuses leftover argv (Engine must pass an empty command)', () => {
   assert.match(r.stdout, /ERROR: unexpected arguments: apache2-foreground/)
   assert.match(readFileSync(join(dst, 'richdocuments/appinfo/info.xml'), 'utf8'), /<version>0\.0\.1<\/version>/)
   assert.ok(existsSync(join(dst, 'richdocuments/OLD')))
+  assert.doesNotMatch(readFileSync(cfg, 'utf8'), /appstoreenabled/)
+  assert.ok(!existsSync(join(dst, '.idea-update-state')))
+})
+
+it('installs an app that is not in custom_apps yet (empty plan fields do not shift)', () => {
+  writeInfo(join(dst, 'richdocuments'), '0.0.1', '31')
+  const r = run()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, new RegExp(`installed idea_usage ${USAGE_VER.replace(/\./g, '\\.')}`))
+  assert.match(r.stdout, /backed up richdocuments 0\.0\.1/)
+  assert.doesNotMatch(r.stdout, /backed up idea_usage/)
+  assert.ok(existsSync(join(dst, 'idea_usage/appinfo/info.xml')))
 })
