@@ -63,6 +63,11 @@ reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft.
   The admin manual has no "Upgrade to Nextcloud 34" critical-changes page; Nextcloud
   maintainers say there are no critical admin changes. PHP 8.5 is provided by the official
   image. See idea#548 §8.5 for shipped apps (`office`, `files_lock`, `appstore`) and API notes.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
+  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
 
 **Migration:** Nextcloud's own database upgrade on the first start of 4.0 (33.0.11 →
 34.0.6), after Prepare has staged the new apps. Files and accounts are kept.
