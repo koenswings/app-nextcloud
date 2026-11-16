@@ -60,8 +60,8 @@ reserved). No image publish, no tag. Stacked on the 2.0-32.0.15 draft.
   require a configured `serverid` to upgrade (admin overview info only); this draft does
   not set one. MariaDB stays on 11.7.2.
 - **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
-  `appstoreenabled=false` before `occ upgrade` and settle restores the previous value once
-  settled; verify accepts richdocuments at the pinned version or newer (semver compare).
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
 
