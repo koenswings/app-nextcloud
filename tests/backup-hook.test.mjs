@@ -52,11 +52,13 @@ it('compose: hook method, ordered pre/post lists, hookExclude data/db, mounts, d
   assert.match(compose, /- \.\/hooks\/app-healthcheck\.sh:\/idea\/app-healthcheck\.sh:ro/)
   assert.match(compose, /test: \["CMD", "\/idea\/app-healthcheck\.sh"\]/)
   assert.match(compose, /healthCheck:\n    path: \/status\.php\n    expect: '"maintenance":false,"needsDbUpgrade":false'/)
-  assert.match(compose, /test: \["CMD-SHELL", "\[ ! -e \/var\/lib\/mysql\/\.idea-import-pending \] && healthcheck\.sh --connect --innodb_initialized"\]/)
+  // engine#468: the db healthcheck is hooks/db-healthcheck.sh (markers, image check, schema once expected)
+  assert.match(compose, /test: \["CMD", "bash", "\/idea\/db\/healthcheck\.sh"\]/)
   assert.match(compose, /- MARIADB_AUTO_UPGRADE=1\n/, 'healthcheck user on existing data dirs')
   assert.doesNotMatch(compose, /mariadb-admin|healthcheck.*PASS|--password/, 'no credential-less ping, no password in compose')
   assert.match(compose, /depends_on:\n      nextcloud-db:\n        condition: service_healthy/)
-  assert.doesNotMatch(compose, /^\s+restart: (?!no)/m, 'restart: no stays on every service')
+  // engine#468: nextcloud-db alone gets restart: on-failure:3 (retry-safe restore import)
+  assert.deepEqual(compose.match(/^\s+restart: .*$/gm).map((l) => l.trim()), ['restart: no', 'restart: on-failure:3', 'restart: no'])
 })
 
 it('dump: writes nextcloud.sql + id, password only via MYSQL_PWD, never printed', () => {

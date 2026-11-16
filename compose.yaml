@@ -155,6 +155,7 @@ x-app:
     hookExclude:
       - data/db          # live InnoDB files: the dump in data/backup/db replaces them
       - data/nextcloud/data/.idea-backup-pending  # ephemeral healthcheck marker; also cleared on start
+      - data/db-quarantine  # half-initialised datadirs of a failed restore import (engine#468)
     # Paths true of a hook archive and of a fallback (stop) or cold archive (engine#401 adds per-mode checks).
     verify:
       present:
@@ -163,6 +164,12 @@ x-app:
         - data/nextcloud/version.php
         - hooks/backup-db-dump.sh
       absent: []
+      # engine#401 per-mode list, added for hook archives only: the dump the restore imports
+      # (agent-engine-dev#468). A stop or cold archive keeps data/db and has no dump.
+      hook:
+        present:
+          - data/backup/db/nextcloud.sql
+          - data/backup/db/nextcloud.sql.id
 networks:
   backend: null
 services:
@@ -281,10 +288,18 @@ services:
     image: mariadb:11.8.9-noble@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707
     labels:
       x-app-version: "6.0-35.0.3"
-    restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
       --innodb-file-per-table=1 --skip-innodb-read-only-compressed
+    # agent-engine-dev#468 (app-nextcloud#42): entrypoint wrapper around the image's own
+    # docker-entrypoint.sh (hooks/db-entrypoint.sh). It waits up to IDEA_DB_START_WAIT tries
+    # (stock: 30) for the temporary init server, and makes the restore import retry-safe: an
+    # import that never completed leaves data/db/.idea-restore-pending, and the next start moves
+    # the half-initialised datadir into a new data/db-quarantine/db-<stamp>-<pid>/ (mv, never
+    # deleted) and imports again. restart: on-failure:3 gives up to 3 such retries (only this
+    # service; a stop by the Engine is not a failure).
+    restart: on-failure:3
+    entrypoint: ["bash", "/idea/db/entrypoint.sh"]
     # idea#403: the image's own healthcheck.sh --connect --innodb_initialized, logged in as the
     # image's healthcheck user from data/db/.my-healthcheck.cnf (a file, so no password in compose
     # or the process list, and no "Access denied" / "Aborted connection" log lines).
@@ -294,9 +309,13 @@ services:
     # skip-networking, so the db only turns healthy after the import. start_period 900 s covers a
     # large import on a Pi.
     healthcheck:
-      # A restore whose dump import broke leaves data/db/.idea-import-pending (backup-db-dump.sh
-      # markers): stay unhealthy so Nextcloud never starts on a half-imported database.
-      test: ["CMD-SHELL", "[ ! -e /var/lib/mysql/.idea-import-pending ] && healthcheck.sh --connect --innodb_initialized"]
+      # hooks/db-healthcheck.sh: unhealthy while data/db/.idea-restore-pending or
+      # .idea-import-pending exists (an import running, broken or never completed), then the image
+      # check above, then the Nextcloud schema (nextcloud/oc_appconfig) once it is expected
+      # (data/db/.idea-schema-expected: after a verified restore import, or once the schema was
+      # seen). Not before: Nextcloud creates its tables only after the db is healthy, so always
+      # requiring them would deadlock a fresh install.
+      test: ["CMD", "bash", "/idea/db/healthcheck.sh"]
       interval: 5s
       timeout: 5s
       retries: 6
@@ -307,6 +326,11 @@ services:
       - ./data/backup/db:/docker-entrypoint-initdb.d
       - ./hooks/backup-db-dump.sh:/idea/backup/db-dump.sh:ro
       - ./hooks/backup-db-clean.sh:/idea/backup/db-clean.sh:ro
+      # agent-engine-dev#468: entrypoint wrapper, healthcheck, and where a never-completed
+      # restore import's datadir is moved (one new subfolder per retry; left for a person).
+      - ./hooks/db-entrypoint.sh:/idea/db/entrypoint.sh:ro
+      - ./hooks/db-healthcheck.sh:/idea/db/healthcheck.sh:ro
+      - ./data/db-quarantine:/idea/db-quarantine
     environment:
       - MYSQL_ROOT_PASSWORD=${pass}
       - MYSQL_PASSWORD=${pass}
@@ -314,6 +338,8 @@ services:
       - MYSQL_USER=nextcloud
       # idea#403: healthcheck user + .my-healthcheck.cnf on existing data dirs (see healthcheck above).
       - MARIADB_AUTO_UPGRADE=1
+      # agent-engine-dev#468: tries (1 s apart) for the temporary init server (stock 30).
+      - IDEA_DB_START_WAIT=300
     networks:
       - backend
   code:

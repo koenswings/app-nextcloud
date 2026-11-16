@@ -12,6 +12,9 @@ Stacked on the 5.0-34.0.6 draft (MariaDB 11.8); last hop of the 31 → 35 path. 
 from 5.0-35.0.3 once MariaDB 11.8 became its own 5.0 release (idea#548 Q9); the PR branch
 is still named `kid/nc-5.0`.
 
+- **Carries the 5.0 restore import fix (agent-engine-dev#468):** the `nextcloud-db` entrypoint
+  wrapper, schema healthcheck, `restart: on-failure:3` and `verify.hook.present` dump check,
+  merged up from 5.0 unchanged (see the 5.0 notes and `docs/backup.md`).
 - **Nextcloud major hop:** official `library/nextcloud` `34.0.6-apache` → `35.0.3-apache`
   (latest 35.0.x as of 2026-11-15; nextcloud/server `v35.0.3`, 2026-11-12). App major
   5.0 → 6.0. Bundle name `nextcloud-6.0-35.0.3`. `x-app.updatesFrom: [5]` (repo
@@ -146,6 +149,17 @@ and the way back is the Backup Disk backup.
   after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
   Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
   at the end of this file.
+
+- **Restore import fix (agent-engine-dev#468, 2026-11-16):** the in-place restore on 11.8.9 on
+  idea04 failed because the image entrypoint waits only 31 s for its temporary server and the
+  import never ran. `nextcloud-db` gets an entrypoint wrapper (`hooks/db-entrypoint.sh`: 300-try
+  wait, `.idea-restore-pending` marker, a never-completed import's datadir moved into a new
+  `data/db-quarantine/` folder and re-imported), `restart: on-failure:3`, a db healthcheck
+  (`hooks/db-healthcheck.sh`) that requires the Nextcloud schema once it is expected (not on a
+  fresh install, which would deadlock `depends_on: service_healthy`), and
+  `verify.hook.present: [data/backup/db/nextcloud.sql, data/backup/db/nextcloud.sql.id]`.
+  Part of the unreleased 5.0 draft, so no version bump. Details: `docs/backup.md`
+  "Entrypoint wrapper and retry".
 
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
