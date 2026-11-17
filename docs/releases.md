@@ -88,6 +88,14 @@ and the way back is the Backup Disk backup.
 **Migration:** MariaDB's own system-table upgrade on the first start of 5.0. Nextcloud does
 not upgrade (still 34.0.6), so `needsDbUpgrade` stays false. Files and accounts are kept.
 
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
+
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
 is planned on Engine 80ba4af from a fresh 4.0-34.0.6 install, after the duration walk frees
 a pool Pi, and only when Steve says go. It cannot run on Engine 41ba677+, which refuses this
@@ -170,6 +178,14 @@ are unchanged.
 upgrade is a separate release, app-nextcloud#31). Nextcloud 34's setup check accepts
 MariaDB 10.6–11.8; only Nextcloud's own schema upgrade runs.
 
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
+
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
 pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
 is left at the 1.7 value (cba91a6) until that proof.
@@ -244,6 +260,14 @@ are unchanged.
 upgrade is a separate release, app-nextcloud#31). Nextcloud 33's setup check accepts
 MariaDB 10.6–11.8; only Nextcloud's own schema upgrade runs.
 
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
+
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
 pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
 is left at the 1.7 value (cba91a6) until that proof.
@@ -310,6 +334,14 @@ are unchanged.
 `koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404` (idea#548 Q9: the MariaDB 11.8
 upgrade is a separate release, app-nextcloud#31). Nextcloud 32's setup check accepts
 MariaDB 10.6–11.8; only Nextcloud's own schema upgrade runs.
+
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
 
 **Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
 pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
