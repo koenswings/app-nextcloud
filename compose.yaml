@@ -28,8 +28,10 @@ x-app:
     Nextcloud upgrades its database on the first start of the new version. Files and
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
   # DRAFT (engine#456, kid/456-x-app-update, 2026-11-17): App side of the Engine
-  # x-app.update runner, written against the contract in the #456 issue body
-  # (Axle addendum 2026-11-15, idea#548). Pending Axle's #456 design comment.
+  # x-app.update runner. Contract: the #456 issue body (Axle addendum 2026-11-15,
+  # idea#548) and Axle's #456 design comment (2026-11-17, Steve's decisions §8:
+  # load images after Swap, IDEA_UPDATE_FROM / IDEA_UPDATE_TO passed to every
+  # step, timeouts required and 1 s - 6 h). Draft until the runner code lands.
   # Do NOT release a bundle with this block before the runner lands: Engine
   # 41ba677+ (engine#463 interim) refuses it with UPDATE_STAGES_UNSUPPORTED,
   # and an older Engine ignores it. The same scripts and block ship on the

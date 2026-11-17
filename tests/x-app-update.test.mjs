@@ -116,3 +116,26 @@ it('agent-app-dev check-compose accepts the compose (gap 12 x-app.update rules)'
   const r = spawnSync('node', [CC, join(root, 'compose.yaml')], { encoding: 'utf8' })
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })
+
+it('every step logs IDEA_UPDATE_FROM / IDEA_UPDATE_TO when the Engine sets them (design §8 Q7), and does not need them', () => {
+  const base = {
+    PATH: process.env.PATH,
+    IDEA_NC_HEALTH_URL: 'http://127.0.0.1:9/status.php', // nothing listens: steps stop early
+    IDEA_BUNDLED_APPS: join(root, 'bundled-apps'),
+    IDEA_UPDATE_STATE_DIR: join(root, '.no-such-state-dir'),
+    IDEA_WORK_SCHEMA_REPAIR: '0',
+    IDEA_CRON: '/bin/false',
+    OCC: '/bin/false',
+  }
+  const hop = { IDEA_UPDATE_FROM: '1.8-31.0.14', IDEA_UPDATE_TO: '1.9-31.0.14' }
+  for (const name of ['verify', 'work', 'settle']) {
+    const host = join(root, 'hooks', stages()[name].command.replace('/idea/hooks/', ''))
+    const withHop = spawnSync(host, [], { encoding: 'utf8', env: { ...base, ...hop } })
+    assert.match(withHop.stdout, /: hop 1\.8-31\.0\.14 -> 1\.9-31\.0\.14$/m, name + withHop.stdout)
+    const without = spawnSync(host, [], { encoding: 'utf8', env: base })
+    assert.doesNotMatch(without.stdout, /: hop /, name)
+    assert.equal(without.status, withHop.status, `${name}: same exit with or without the hop env`)
+  }
+  const prep = readFileSync(join(root, 'hooks/prep-custom-apps-for-upgrade.sh'), 'utf8')
+  assert.match(prep, /log "hop \$\{IDEA_UPDATE_FROM:-\?\} -> \$\{IDEA_UPDATE_TO:-\?\}"/)
+})

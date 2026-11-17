@@ -2,7 +2,8 @@
 
 Status: **draft**, written against the contract in the
 [engine#456](https://github.com/koenswings/agent-engine-dev/issues/456) issue body (Axle addendum
-2026-11-15, idea#548). It waits for Axle's #456 design comment and the Engine runner. Engine
+2026-11-15, idea#548) and Axle's #456 design comment (2026-11-17; Steve's decisions in its §8). It
+waits for the Engine runner code. Engine
 41ba677+ (engine#463 interim) refuses a bundle that declares these stages with
 `UPDATE_STAGES_UNSUPPORTED`, so do not release this block on 1.x before the runner lands.
 
@@ -28,6 +29,10 @@ Not stages: `occ upgrade` and maintenance mode on/off are done by the official i
 Start (it refuses to skip a Nextcloud major). App re-enable after Start is the before-starting hooks
 (`25-idea-usage.sh`, `30-idea-office.sh`, fail open); verify is the fail-closed net. MariaDB system
 tables: `MARIADB_AUTO_UPGRADE=1` on the db entrypoint.
+
+Engine env (design §8 Q7): `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` are logged as `hop A -> B` by every
+step; no step depends on them. The Engine adds no other env; `run` and `exec` see the compose env
+(`IDEA_APP_VERSION`).
 
 Env knobs (tests and emergencies only): `IDEA_WORK_SCHEMA_REPAIR=0`, `IDEA_WORK_REPAIR_EXPENSIVE=0`,
 `IDEA_WORK_CRON_RUNS`, `IDEA_NC_HEALTH_URL`, `IDEA_BUNDLED_APPS`, `IDEA_CUSTOM_APPS`.

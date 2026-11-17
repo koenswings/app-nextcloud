@@ -31,6 +31,7 @@ IDEA_UPDATE_LOG_PREFIX=idea-settle-update
 . "$HOOKS_DIR/update-lib.sh"
 
 idea_refuse_argv "$@"
+idea_log_hop
 
 body=$(mktemp "${TMPDIR:-/tmp}/idea-settle.XXXXXX") || idea_die "cannot create temp file"
 # shellcheck disable=SC2064

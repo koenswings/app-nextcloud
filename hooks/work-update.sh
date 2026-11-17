@@ -35,6 +35,7 @@ IDEA_UPDATE_LOG_PREFIX=idea-work-update
 . "$HOOKS_DIR/update-lib.sh"
 
 idea_refuse_argv "$@"
+idea_log_hop
 
 # First: undo prepare's app store pin (Steve's S4 decision, 2026-11-16; Axle
 # review Q4). Its only job was to stop occ upgrade at Start from pulling

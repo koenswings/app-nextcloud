@@ -16,6 +16,16 @@
 # (capped at 200 characters on the Engine side). Scripts must not print secrets.
 
 idea_log() { echo "${IDEA_UPDATE_LOG_PREFIX:-idea-update}: $*"; }
+
+# engine#456 design §8 Q7 (Steve, 2026-11-17): the Engine passes the
+# non-secret IDEA_UPDATE_FROM / IDEA_UPDATE_TO to every step. Logged for the
+# trace only; no step depends on them (an Engine that does not set them, or a
+# manual run, behaves the same).
+idea_log_hop() {
+	if [ -n "${IDEA_UPDATE_FROM:-}" ] || [ -n "${IDEA_UPDATE_TO:-}" ]; then
+		idea_log "hop ${IDEA_UPDATE_FROM:-?} -> ${IDEA_UPDATE_TO:-?}"
+	fi
+}
 idea_die() { idea_log "ERROR: $*"; exit 1; }
 idea_not_yet() { idea_log "not yet: $*"; exit 3; }
 

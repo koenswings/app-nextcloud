@@ -71,6 +71,11 @@ if [ "$#" -ne 0 ]; then
 	die "unexpected arguments: $* (Engine must pass an empty command)"
 fi
 
+# engine#456 §8 Q7: non-secret hop labels from the Engine, logged only.
+if [ -n "${IDEA_UPDATE_FROM:-}" ] || [ -n "${IDEA_UPDATE_TO:-}" ]; then
+	log "hop ${IDEA_UPDATE_FROM:-?} -> ${IDEA_UPDATE_TO:-?}"
+fi
+
 SRC="${IDEA_BUNDLED_APPS:-/idea-bundled-apps}"
 DST="${IDEA_CUSTOM_APPS:-/var/www/html/custom_apps}"
 BACKUP="${IDEA_UPGRADE_BACKUP:-$DST/.idea-upgrade-backup}"
