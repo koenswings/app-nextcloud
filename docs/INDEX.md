@@ -15,5 +15,6 @@ Update this file whenever an authoritative doc is added or significantly revised
 | [first-start.md](./first-start.md) | Self-install and hook order |
 | [usage-hook.md](./usage-hook.md) | idea#413 / idea#431 / idea#464 usage hook (`x-app.usage`, day summaries, Office samples, share/file-drop byGroup, appsOpened, documents created) |
 | [backup.md](./backup.md) | idea#403 live backup: `x-app.backup` hook steps (maintenance mode, MariaDB dump), restore of a hook archive; app-nextcloud#29 healthcheck during the backup window |
+| [update-stages.md](./update-stages.md) | engine#456 draft: `x-app.update` prepare / verify / work / settle, scripts, timeouts, failure rules, TERM safety, App store pin |
 | [releases.md](./releases.md) | Release notes per tagged version (2.0-32.0.15 draft, then 1.8-31.0.14) |
 | [../demo/README.md](../demo/README.md) | Demo apps (engine#369): `app.yaml` `demo:` block, demo pack v1 (`demo/build-demo-pack.py`, `CREDITS.txt`), `demo/hook.sh seed`; and the manual `install-demo.sh` |
