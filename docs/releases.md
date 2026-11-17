@@ -5,11 +5,95 @@ Kits get a release only through Engine `updateApp` (idea#374). Until a Nextcloud
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
 
+## 6.0-35.0.3
+
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). No image publish, no tag.
+Stacked on the 5.0-34.0.6 draft (MariaDB 11.8); last hop of the 31 → 35 path. Renumbered
+from 5.0-35.0.3 once MariaDB 11.8 became its own 5.0 release (idea#548 Q9); the PR branch
+is still named `kid/nc-5.0`.
+
+- **Carries the 5.0 restore import fix (agent-engine-dev#468):** the `nextcloud-db` entrypoint
+  wrapper, schema healthcheck, `restart: on-failure:3` and `verify.hook.present` dump check,
+  merged up from 5.0 unchanged (see the 5.0 notes and `docs/backup.md`).
+- **Nextcloud major hop:** official `library/nextcloud` `34.0.6-apache` → `35.0.3-apache`
+  (latest 35.0.x as of 2026-11-15; nextcloud/server `v35.0.3`, 2026-11-12). App major
+  5.0 → 6.0. Bundle name `nextcloud-6.0-35.0.3`. `x-app.updatesFrom: [5]` (repo
+  convention: a list of App majors; 5 covers the 5.x line, 5.0-34.0.6 = Nextcloud 34 on
+  MariaDB 11.8). 6.0 does not list 4 or older: 4.x is still on MariaDB 11.7, and 3.x or
+  older would skip a Nextcloud major. Each hop of the chained path still has to pass `updatesFrom` on
+  its own.
+- **Images:** `nextcloud-app` is pinned to the upstream multi-platform index
+  `nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3`
+  (`linux/arm64` variant v8 is in the index, platform manifest
+  `sha256:1059f89e8a1a78fbce4f88d358b6eaf20c32d3a47f67b049ec53fe588ab4be6d`; PHP 8.5.12).
+  The usual IDEA retag `koenswings/nextcloud:6.0-35.0.3` is not published yet (needs Koen
+  YES). check-compose and the Engine pin check (`saveName()`, idea#322) require
+  `repo:tag@sha256:<64 hex>`, so the compose uses the published official tag+index digest
+  until the retag exists and the pin is swapped. CODE
+  (`koenswings/nextcloud-code:1.0-24.04.13.2`) is unchanged since 1.2.
+- **PHP:** Nextcloud 35 drops PHP 8.2 (supported 8.3–8.5, 8.5 recommended). The official
+  image ships PHP 8.5.12, and richdocuments 12.0.2 needs PHP ≥ 8.3. Nothing for the App to
+  change.
+- **bundled apps:** `richdocuments` 12.0.2 (`info.xml` min-version 35, max-version 35;
+  official `nextcloud-releases/richdocuments` asset, sha256
+  `5deacee4fa1bb8eb7068e86c6dadbdaf0e44f8c79df0298a2254f562e3ed949b`, same as the GitHub
+  asset digest). `idea_usage` stays 1.0.0 with the Nextcloud range widened to min-version
+  31, max-version 35 (a version bump is decided at release). 11.1.3 is not shipped: a fresh
+  35 install would otherwise extract the 34-only tarball first. `files_external` is still a
+  shipped app in `v35.0.3`. All 16 `OCP\` classes that `idea_usage` imports still exist in
+  `lib/public` at `v35.0.3` (desk check at class level only; method-level use is part of
+  the Pi proof).
+- **Prepare / verify / work / settle:** unchanged from 4.0 and 5.0 (`x-app.update.prepare`,
+  `x-app.update.verify`, `x-app.update.work`, `x-app.update.settle`; same scripts, users,
+  timeouts and interval). `hooks/update-targets` gains `6.0-35.0.3  12.0.2  1.0.0`, and
+  verify expects richdocuments 12.0.2 or newer and idea_usage 1.0.0 enabled.
+- **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
+  Re-measure on a pool Pi before locking the release.
+- **Engine floor:** 6.0 declares the same `x-app.update` stages, and it needs them:
+  `prepare` stages richdocuments 12.0.2 and idea_usage (max-version 35) before
+  `occ upgrade`. Engine 41ba677 (engine#463) and later refuse the bundle at Check
+  with `UPDATE_STAGES_UNSUPPORTED` until the full engine#456 stages land (#456 L).
+  A run on the pool's pre-#463 Engine 80ba4af is not a field proof: without
+  `prepare`, `occ upgrade` disables Office and idea_usage on an offline kit.
+  The Pi proof waits for #456 L. Kits on an Engine older than 41ba677 must never
+  get Nextcloud 2.0+ bundles (agent-app-dev `docs/app-bundle-integrity.md`).
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
+
+**Migration:** Nextcloud's own database upgrade on the first start of 6.0 (34.0.6 →
+35.0.3), after Prepare has staged the new apps. Files and accounts are kept.
+Nextcloud is in maintenance mode until the upgrade has finished. MariaDB (11.8.9 since
+5.0) and CODE are unchanged.
+
+**Database:** no change. MariaDB stays on 11.8.9 from 5.0-34.0.6
+(`mariadb:11.8.9-noble@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707`),
+so no database image upgrade happens in this release; only Nextcloud's own schema upgrade
+runs. Nextcloud 35 dropped MariaDB 10.6 and lists 10.11 / 11.4 / 11.8 / 12.3 ("Upgrade to
+Nextcloud 35" admin manual); 11.8 is on that list and inside the setup-check range
+MariaDB 10.11–12.3 (`SupportedDatabase.php` at `v35.0.3`).
+
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
+
+**Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
+waits for #456 L (the full `x-app.update` stages). It cannot run on Engine 41ba677+,
+which refuses this bundle, and a stage-less run on 80ba4af is not a field proof.
+`engine_tested` is left at the 1.7 value (cba91a6) until that proof.
+
 ## 5.0-34.0.6
 
 **DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). No image publish, no tag.
-Stacked on the 4.0-34.0.6 draft. Database-only App major: it comes after the 34 hop and
-before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
+Stacked on the 4.0-34.0.6 draft. The live tree on this branch is now 6.0-35.0.3; this
+section is the 5.0 release that 6.0 updates from. Database-only App major: it comes after
+the 34 hop and before the Nextcloud 35 hop (idea#548 Q9, §8.2; app-nextcloud#31).
 
 - **Database-only App major:** 5.0 exists only because of the MariaDB upgrade below; there is
   no change to Nextcloud or the App itself (agent-app-dev `docs/app-bundle-integrity.md`).

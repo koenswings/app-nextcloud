@@ -95,10 +95,10 @@ it('reads the target version from the bundled tarball when env is unset', () => 
 it('reads the target version from update-targets when IDEA_APP_VERSION is set and no tarball dir is visible', () => {
   const r = run({
     IDEA_BUNDLED_APPS: join(dir, 'missing-bundled'),
-    IDEA_APP_VERSION: '4.0-34.0.6',
-    IDEA_OCC_LIST: appList('11.1.3', '1.0.0'),
+    IDEA_APP_VERSION: '6.0-35.0.3',
+    IDEA_OCC_LIST: appList('12.0.2', '1.0.0'),
   })
-  // On a 2.0/3.0 tree this still works: we force 4.0-34.0.6 + matching app list.
+  // On any hop tree this still works: we force 6.0-35.0.3 + matching app list.
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })
 
