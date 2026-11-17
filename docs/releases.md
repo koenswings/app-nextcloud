@@ -5,6 +5,17 @@ Kits get a release only through Engine `updateApp` (idea#374). Until the 1.8 Nex
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
 
+## Unreleased (draft, engine#456): x-app.update on 1.x
+
+Not a release, no version change. Branch `kid/456-x-app-update` adds the `x-app.update` block and
+step scripts ([update-stages.md](./update-stages.md)) to the 1.x bundle, the same scripts as the
+2.0+ release branches plus a new schema-repair step in work (`occ db:add-missing-indices`,
+`db:add-missing-columns`, `db:add-missing-primary-keys`, `maintenance:repair --include-expensive`).
+App store pin: prepare pins `appstoreenabled=false` before `occ upgrade`, work restores it; verify
+accepts richdocuments at the pinned version or newer. `hooks/update-targets` gains
+`1.8-31.0.14  8.8.3  1.0.0`. Must not be released before the Engine runs the stages (engine#463
+refuses it).
+
 ## 1.8-31.0.14
 
 - **Nextcloud point update:** official `library/nextcloud` `31.0.1-apache` → `31.0.14-apache`

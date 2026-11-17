@@ -27,6 +27,56 @@ x-app:
   migrationNote: >
     Nextcloud upgrades its database on the first start of the new version. Files and
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
+  # DRAFT (engine#456, kid/456-x-app-update, 2026-11-17): App side of the Engine
+  # x-app.update runner, written against the contract in the #456 issue body
+  # (Axle addendum 2026-11-15, idea#548). Pending Axle's #456 design comment.
+  # Do NOT release a bundle with this block before the runner lands: Engine
+  # 41ba677+ (engine#463 interim) refuses it with UPDATE_STAGES_UNSUPPORTED,
+  # and an older Engine ignores it. The same scripts and block ship on the
+  # 2.0-32.0.15 ... 6.0-35.0.3 release branches (kid/nc-2.0 ... kid/nc-5.0).
+  # Step order after Swap: prepare → Start → Health → verify → work → settle.
+  # prepare and verify failures roll back (snapshot restore in place); work and
+  # settle failures never roll back (the operation stops with migrationsPending).
+  # Every occ / cron step declares user: "33"; the Engine passes user verbatim
+  # (compose run --user / exec -u) and never defaults it.
+  # prepare: after Swap, before Start, one-off
+  #   docker compose run --rm --no-deps --no-TTY --user 0 nextcloud-app
+  # with a generated override (entrypoint: [command], empty command). No DB, no
+  # occ, no image entrypoint. Verifies bundled-apps sha256, mv's an older
+  # custom_apps/<app> into custom_apps/.idea-upgrade-backup/ and extracts the
+  # bundled tree, so the Start-time `occ upgrade` sees compatible apps and does
+  # not disable idea_usage / richdocuments; then pins appstoreenabled=false in
+  # config.php (state in custom_apps/.idea-update-state/). Idempotent.
+  # verify: once after Health, exec -T -u 33. status.php installed true,
+  # maintenance false, needsDbUpgrade false; richdocuments enabled at the
+  # pinned version or newer; idea_usage enabled at its exact version.
+  # work: once after verify, exec -T -u 33. Restores appstoreenabled; occ
+  # db:add-missing-indices / -columns / -primary-keys and maintenance:repair
+  # --include-expensive; then cron.php up to 3 times (until no upgrade jobs).
+  # settle: polled, exec -T -u 33, exit 0 settled / 3 not yet / other error.
+  # Read-only: status.php + pending upgrade background jobs. See docs/releases.md.
+  update:
+    prepare:
+      service: nextcloud-app
+      user: "0"
+      command: /idea/hooks/prep-custom-apps-for-upgrade.sh
+      timeout: 600
+    verify:
+      service: nextcloud-app
+      user: "33"
+      command: /idea/hooks/verify-update.sh
+      timeout: 120
+    work:
+      service: nextcloud-app
+      user: "33"
+      command: /idea/hooks/work-update.sh
+      timeout: 3600
+    settle:
+      service: nextcloud-app
+      user: "33"
+      command: /idea/hooks/settle-update.sh
+      interval: 60
+      timeout: 3600
   snapshotExclude: []    # user files and the database are both needed for a rollback
   filesMount:
     path: /mnt/idea-files
@@ -142,6 +192,10 @@ services:
       # idea#403: the backup dump folder, read by before-starting/00-idea-restore.sh after a restore.
       - ./data/backup/db:/idea-backup-db:ro
       - ./hooks/app-healthcheck.sh:/idea/app-healthcheck.sh:ro
+      # x-app.update prepare / verify / work / settle (engine#456 draft). Whole hooks
+      # dir so the one-off prepare run and the running exec steps all see the
+      # scripts at /idea/hooks/.
+      - ./hooks:/idea/hooks:ro
     # idea#403: start after MariaDB answers on TCP, so a restored instance's dump import
     # (MariaDB's temporary init server has no TCP) has finished before Nextcloud starts.
     depends_on:
@@ -191,6 +245,9 @@ services:
       - IDEA_TRUST_LAN_SUBNET=${IDEA_TRUST_LAN_SUBNET:-1}
       # Files Disk and USB stick storages are visible to this group + admin only (created if missing).
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
+      # x-app.update hooks: must match x-app.version. Used to look up
+      # hooks/update-targets when a bundled tarball is not visible.
+      - IDEA_APP_VERSION=1.8-31.0.14
     networks:
       - backend
   nextcloud-db:
