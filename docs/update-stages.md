@@ -63,6 +63,26 @@ shell (never inside `$(...)`, where traps are reset). Writes are atomic:
 The Engine still restores the snapshot after any failed or interrupted prepare or verify; the App's
 resumability is defensive.
 
+## Test switch: injected verify failure (Pi proofs only)
+
+For the Engine runner's injected-failure run (engine#456 / PR #505: expect `VERIFY_FAILED`, then a
+rollback), verify fails on purpose while this file exists:
+
+| In the container | On the host |
+|---|---|
+| `/var/www/html/data/.idea-test-fail-verify` | `<instance dir>/data/nextcloud/data/.idea-test-fail-verify` |
+
+It is checked first, before status.php and occ, and prints, as its last line:
+
+    ERROR: verify failed (test switch /var/www/html/data/.idea-test-fail-verify) [idea-verify-update]
+
+then exits 1. It is a file, not env, because the Engine passes only `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO`
+and the data dir persists through Swap without editing compose (the Nextcloud data dir is not served over
+HTTP). Create it on the old (1.x) instance before `updateApp`, e.g.
+`sudo touch <instance dir>/data/nextcloud/data/.idea-test-fail-verify`. The file is in the pre-update
+snapshot, so it is still there after the rollback: remove it before the next run. Never ship it: no
+release step creates it. `IDEA_TEST_FAIL_VERIFY_MARKER` overrides the path for unit tests only.
+
 Env knobs (tests and emergencies only): `IDEA_WORK_SCHEMA_REPAIR=0`, `IDEA_WORK_REPAIR_EXPENSIVE=0`,
 `IDEA_WORK_CRON_RUNS`, `IDEA_NC_HEALTH_URL`, `IDEA_BUNDLED_APPS`, `IDEA_CUSTOM_APPS`.
 
