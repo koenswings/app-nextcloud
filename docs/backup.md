@@ -121,18 +121,58 @@ existing database and does not import again, but the db healthcheck
 turns healthy, Nextcloud (`depends_on: service_healthy`) never starts on the partial database,
 and the start ends in Error once `start_period` (900 s) and the retries are used up.
 
-**A pending marker means the import broke: move `data/db` aside and start again** (the dump in
-`data/backup/db` is imported into the new empty datadir). The markers do nothing on a normal
-start or during a live backup: initdb files only run on an empty datadir.
+Since 5.0 (agent-engine-dev#468) the db entrypoint wrapper moves that datadir aside itself (next
+section); with the wrapper the old advice to move `data/db` by hand is only needed when no dump is
+left. The markers do nothing on a normal start or during a live backup: initdb files only run on an
+empty datadir.
+
+### Entrypoint wrapper and retry (5.0, agent-engine-dev#468)
+
+On MariaDB 11.8.9 on a Pi the in-place restore failed: the image entrypoint waits only 31 s
+(`for i in {30..0}`, sleep 1, no setting) for its temporary init server, the server was slower,
+the entrypoint exited 1 before importing (`Unable to start server.`), and with `restart: no` that
+was final. A plain retry would have been worse: the datadir is then initialised, so initdb is
+skipped and the db could turn healthy with no Nextcloud data.
+
+`nextcloud-db` now runs `entrypoint: ["bash", "/idea/db/entrypoint.sh"]` (`hooks/db-entrypoint.sh`),
+which sources the image's own `docker-entrypoint.sh` and then runs its `_main`:
+
+- **Longer wait:** the stock `docker_temp_server_start` loop is rewritten from `{30..0}` to
+  `IDEA_DB_START_WAIT` tries (compose: 300). If a later image no longer has that text, the stock
+  loop is kept (logged) and the retry still applies.
+- **Restore marker:** empty datadir plus `data/backup/db/nextcloud.sql` → write
+  `data/db/.idea-restore-pending` before init. It is removed only after the import, once
+  `nextcloud.oc_appconfig` exists (SQL on the temporary server) and that server stopped cleanly;
+  then `data/db/.idea-schema-expected` is written. Schema missing after the import → exit 1, marker kept.
+- **Retry:** a start that finds `.idea-restore-pending` (or `.idea-import-pending`) next to an
+  initialised datadir moves all of the datadir's contents (mv, never deleted) into a **new**
+  `data/db-quarantine/db-<UTC stamp>-<pid>/` and lets the stock entrypoint initialise and import
+  again. `restart: on-failure:3` (this service only) gives up to 3 retries. A marker without a dump
+  moves nothing (nothing to import) and the db stays unhealthy. `data/db-quarantine` is in
+  `hookExclude`; its folders are left for a person to look at and remove.
+- Fresh install (no dump) and normal starts take the stock path (only the longer wait differs).
+
+**Db healthcheck** (`hooks/db-healthcheck.sh`): unhealthy while either marker exists; then the
+image's `healthcheck.sh --connect --innodb_initialized` as before; then the Nextcloud schema
+(`data/db/nextcloud/oc_appconfig.frm`) **only once it is expected**, i.e. when
+`data/db/.idea-schema-expected` exists. Requiring it always would deadlock a fresh install:
+`nextcloud-app` waits for `nextcloud-db` `service_healthy`, and Nextcloud creates its tables
+only after it starts. The expected marker is written by the wrapper after a verified restore
+import and by the healthcheck the first time it sees the schema (after the first install, or on
+an instance from before this check). From then on a datadir without the schema never turns
+healthy. The schema test is a file test so the healthcheck user needs no grant on `nextcloud`.
 
 ## verify
 
-`verify.present` lists only paths true of every archive type until engine#401 adds per-mode
-checks: `.env`, `data/nextcloud/config/config.php`, `data/nextcloud/version.php`,
-`hooks/backup-db-dump.sh`. `data/db` is absent only in a hook archive, so it is not listed.
+The flat `verify.present` lists only paths true of every archive type: `.env`,
+`data/nextcloud/config/config.php`, `data/nextcloud/version.php`, `hooks/backup-db-dump.sh`.
+`data/db` is absent only in a hook archive, so it is not listed. Since 5.0 (engine#468) the
+engine#401 per-mode list `verify.hook.present` adds `data/backup/db/nextcloud.sql` and
+`data/backup/db/nextcloud.sql.id` for hook archives only (a stop or cold archive keeps
+`data/db` and has no dump).
 
 ## Tests
 
-`node --test tests/*.test.mjs` (`tests/backup-hook.test.mjs`: compose block, dump/clean with a
+`node --test` (`tests/db-entrypoint.test.mjs`: the db entrypoint wrapper and healthcheck against `tests/fake-mariadb-entrypoint.sh`, set `IDEA_MARIADB_ENTRYPOINT` to check a real image entrypoint; `tests/backup-hook.test.mjs`: compose block, dump/clean with a
 fake `mariadb-dump`, the restore hook with `tests/fake-occ-restore.mjs`;
 `tests/app-healthcheck.test.mjs`: ready, maintenance with a fresh marker, without it, a marker older than 2 h, the 2 h boundary, a future mtime within 300 s and beyond it, and down).

@@ -1,7 +1,7 @@
 /**
- * Release 1.8-31.0.14 is now history: this tree is 4.0-34.0.6.
+ * Release 1.8-31.0.14 is now history: this tree is 5.0-34.0.6.
  * Keep the 1.8 notes in docs/releases.md. Live compose / tarball pins live in
- * tests/release-3.0.test.mjs.
+ * tests/release-5.0.test.mjs.
  * Run: node --test tests/
  */
 import { it } from 'node:test'
@@ -32,7 +32,7 @@ it('release notes still document 1.8-31.0.14 (and 1.7, 1.6, 1.5) as history', ()
   assert.ok(existsSync(join(root, 'config/idea-skeleton.config.php')), '#23 config file ships in the release')
 })
 
-it('live compose is no longer 1.8-31.0.14 (superseded by 4.0)', () => {
+it('live compose is no longer 1.8-31.0.14 (superseded by 5.0)', () => {
   const compose = readFileSync(join(root, 'compose.yaml'), 'utf8')
   assert.doesNotMatch(compose, /^  version: "1\.8-31\.0\.14"$/m)
   assert.doesNotMatch(compose, /nextcloud:31\.0\.14-apache/)
