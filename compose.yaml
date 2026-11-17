@@ -10,27 +10,30 @@ x-app:
   category: office
   icon: nextcloud.png
   author: Koen Swings
-  version: "2.0-32.0.15"
+  version: "3.0-33.0.11"
   instanceName: nextcloud
   # updateApp (idea#351, agent-app-dev#23). healthTimeout: integer seconds.
   # 1.x used 300 s (~4x the measured 30.0.6 -> 31.0.1 first start of 66-69 s on idea04,
-  # 2026-10-28). 2.0 is a Nextcloud major (31 -> 32): desk estimate 600 s until a pool
-  # Pi times this hop (idea#548 §8.1). healthCheck is the updateApp Health-step
-  # probe (HTTP 2xx/3xx and this expect). It stays stricter than the Docker healthcheck,
-  # which also accepts maintenance during an IDEA backup only (app-nextcloud#29).
+  # 2026-10-28). 2.0 and 3.0 are Nextcloud majors: desk estimate 600 s until a pool
+  # Pi times these hops (idea#548 §8.1). healthCheck is the
+  # updateApp Health-step probe (HTTP 2xx/3xx and this expect). It stays stricter
+  # than the Docker healthcheck, which also accepts maintenance during an IDEA
+  # backup only (app-nextcloud#29).
   healthCheck:
     path: /status.php
     expect: '"maintenance":false,"needsDbUpgrade":false'
   healthTimeout: 600
   # Nextcloud cannot skip majors: an App release that moves to the next Nextcloud major
   # lists only the previous App major (repo convention: a list of major numbers, so
-  # [1] covers the 1.x line including 1.8-31.0.14).
-  updatesFrom: [1]
+  # [2] covers the 2.x line including 2.0-32.0.15). 3.0 does not list 1, because a
+  # 1.8 (Nextcloud 31) → 3.0 (Nextcloud 33) skip is impossible. Axle's chained path
+  # is a sequence of such hops; each hop still has to pass updatesFrom on its own.
+  updatesFrom: [2]
   migrationNote: >
-    Nextcloud upgrades its database on the first start of 2.0 (31 -> 32). Files and
+    Nextcloud upgrades its database on the first start of 3.0 (32 -> 33). Files and
     accounts are kept. Nextcloud is in maintenance mode until the upgrade has finished.
-    Before that start, x-app.update.prepare stages richdocuments 9.2.3 and idea_usage
-    (Nextcloud 31-32) into custom_apps.
+    Before that start, x-app.update.prepare stages richdocuments 10.3.3 and idea_usage
+    (Nextcloud 31-33) into custom_apps.
   # Engine update hooks (Axle addendum, 2026-11-15; idea#548 merged).
   # DRAFT (engine#456, 2026-11-17): fitted to Axle's #456 design comment and
   # answers (Steve's decisions §8). IDEA_UPDATE_FROM / IDEA_UPDATE_TO = old /
@@ -169,14 +172,14 @@ services:
   nextcloud-app:
     #image: nextcloud
     # Publish pending (Koen YES): retag this upstream index to
-    # koenswings/nextcloud:2.0-32.0.15 and swap the pin. Official
-    # library/nextcloud 32.0.15-apache multi-platform index (linux/arm64 is in it).
+    # koenswings/nextcloud:3.0-33.0.11 and swap the pin. Official
+    # library/nextcloud 33.0.11-apache multi-platform index (linux/arm64 is in it).
     # check-compose and Engine saveName() require repo:tag@sha256:<64 hex>
     # (no digest-only pin, no unpublished retag name), so the compose uses
     # the published official tag+index digest until the retag exists.
-    image: nextcloud:32.0.15-apache@sha256:db18aaa3a58302d7363dc59905c310f6df5141800bc8f336ab9cdec5577c6211
+    image: nextcloud:33.0.11-apache@sha256:3bbb8b04c6ea1b6687502802f9097fd9723797668a9dd6d0adcf4525b530f7a1
     labels:
-      x-app-version: "2.0-32.0.15"
+      x-app-version: "3.0-33.0.11"
     restart: no
     pull_policy: never
     # Root wrapper chowns /mnt/idea-files/* to uid 33 when wrong, then execs image entrypoint.
@@ -270,14 +273,14 @@ services:
       - IDEA_TEACHERS_GROUP=${IDEA_TEACHERS_GROUP:-teachers}
       # x-app.update hooks: must match x-app.version. Used to look up
       # hooks/update-targets when a bundled tarball is not visible.
-      - IDEA_APP_VERSION=2.0-32.0.15
+      - IDEA_APP_VERSION=3.0-33.0.11
     networks:
       - backend
   nextcloud-db:
     #image: mariadb
     image: koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404@sha256:53097b4b57324f966a7d718bb4bbaff8b8bad626cb677ea46b9a0c12cc53d412
     labels:
-      x-app-version: "2.0-32.0.15"
+      x-app-version: "3.0-33.0.11"
     restart: no
     pull_policy: never
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
@@ -317,7 +320,7 @@ services:
     #image: collabora/code
     image: koenswings/nextcloud-code:1.0-24.04.13.2@sha256:8ca1ed448f542feaf2aed81e475520724db5231a15f46e002275f5255d2a447d
     labels:
-      x-app-version: "2.0-32.0.15"
+      x-app-version: "3.0-33.0.11"
     restart: no
     pull_policy: never
     # No host port: reached only through the nextcloud-app proxy and the backend network.
