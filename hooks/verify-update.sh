@@ -18,6 +18,18 @@
 # Expected versions come from update-lib.sh (tarball / IDEA_APP_VERSION table /
 # env), so this script is shared across 2.0, 3.0 and 4.0.
 #
+# Test switch (engine#456 injected-failure runs, PR #505 Pi proof): when the file
+#   /var/www/html/data/.idea-test-fail-verify
+# exists (host: <instance>/data/nextcloud/data/.idea-test-fail-verify, the Nextcloud
+# data dir, not served over HTTP), verify prints
+#   ERROR: verify failed (test switch /var/www/html/data/.idea-test-fail-verify) [idea-verify-update]
+# and exits 1 before any other check, so the Engine rolls the hop back (VERIFY_FAILED).
+# A file, not env: the Engine passes only IDEA_UPDATE_FROM / IDEA_UPDATE_TO, and the
+# data dir persists across Swap without editing compose. Create it on the 1.8 instance
+# before updateApp (sudo touch; any owner/content). It is in the pre-update snapshot, so
+# it survives the rollback: remove it before the next (happy-path) run.
+# IDEA_TEST_FAIL_VERIFY_MARKER overrides the path (unit tests only).
+#
 # Env: IDEA_NC_HEALTH_URL, OCC, IDEA_BUNDLED_APPS, IDEA_APP_VERSION,
 #      IDEA_VERIFY_RICHDOCUMENTS_VERSION, IDEA_VERIFY_IDEA_USAGE_VERSION,
 #      IDEA_UPDATE_TARGETS
@@ -31,6 +43,14 @@ IDEA_UPDATE_LOG_PREFIX=idea-verify-update
 idea_install_traps
 idea_refuse_argv "$@"
 idea_log_hop
+
+# Injected-failure test switch (see header). Checked first, so the result never
+# depends on the instance state.
+test_marker=${IDEA_TEST_FAIL_VERIFY_MARKER:-/var/www/html/data/.idea-test-fail-verify}
+if [ -e "$test_marker" ]; then
+	idea_die "verify failed (test switch $test_marker)"
+fi
+
 idea_load_target_versions
 
 # status.php URL: IDEA_NC_HEALTH_URL (default http://127.0.0.1/status.php), read by idea_fetch_status.
