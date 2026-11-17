@@ -181,11 +181,20 @@ move_aside() {
 [ -d "$SRC" ] || die "bundled-apps missing: $SRC"
 [ -f "$SRC/SHA256SUMS" ] || die "SHA256SUMS missing in $SRC"
 
-# Every tarball must be listed and match; every SHA256SUMS entry must have a file.
+# SHA256SUMS is the bundle's list of tarballs. The Engine's Swap copies the new bundle over
+# the instance folder without deleting, so the previous release's tarballs (an older
+# richdocuments-v*.tar.gz) are still in bundled-apps/: ignore every tarball the new
+# SHA256SUMS does not list (seen on idea03, engine#456 chain rehearsal). Every listed
+# tarball must exist and match.
+listed() { awk -v f="$1" '$2==f {found=1; exit} END {exit found ? 0 : 1}' "$SRC/SHA256SUMS"; }
 found=0
 for tgz in "$SRC"/*.tar.gz; do
 	[ -f "$tgz" ] || die "no .tar.gz in $SRC"
 	f=$(basename "$tgz")
+	if ! listed "$f"; then
+		log "ignoring $f: not listed in SHA256SUMS (left by an earlier bundle)"
+		continue
+	fi
 	want=$(awk -v f="$f" '$2==f {print $1; exit}' "$SRC/SHA256SUMS")
 	[ -n "$want" ] || die "$f is not listed in SHA256SUMS"
 	case "$want" in
@@ -227,7 +236,9 @@ plan="$DST/.idea-prep-plan-$$"
 : > "$plan"
 
 for tgz in "$SRC"/*.tar.gz; do
+	[ -f "$tgz" ] || continue
 	f=$(basename "$tgz")
+	listed "$f" || continue
 	case "$f" in
 		*-v*.tar.gz) app=${f%%-v*} ;;
 		*) die "unexpected tarball name $f (want <app>-v<version>.tar.gz)" ;;
