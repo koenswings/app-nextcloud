@@ -1,7 +1,7 @@
 /**
  * Unit tests for hooks/prep-custom-apps-for-upgrade.sh. No Docker: a temp dir
  * stands in for ./data/nextcloud/custom_apps and ./bundled-apps.
- * Versions come from the shipped tarballs, so the same tests serve 2.0 / 3.0 / 4.0.
+ * Versions come from the shipped tarballs, so the same tests serve 1.x and 2.0+.
  * Run: node --test tests/
  */
 import { it, beforeEach, afterEach } from 'node:test'
@@ -36,6 +36,10 @@ const RD = xmlFromTar(rdTarball, 'richdocuments')
 const USAGE = xmlFromTar(usageTarball, 'idea_usage')
 assert.equal(RD.ver, RD_VER)
 assert.equal(USAGE.ver, USAGE_VER)
+// The "old" installed tree is one Nextcloud major below the bundled tarball's
+// max-version, so the same tests serve 1.x (max 31) and 2.0+ (max 32 and up).
+const OLD_MAX = String(Number(USAGE.max) - 1)
+assert.ok(Number(OLD_MAX) > 0, `idea_usage max-version ${USAGE.max} is not a number`)
 let dir, src, dst
 
 const sha256 = async (file) => {
@@ -53,7 +57,7 @@ const writeInfo = (appDir, version, max = '31') => {
 const seedOldApps = () => {
   writeInfo(join(dst, 'richdocuments'), '0.0.1', '31')
   writeFileSync(join(dst, 'richdocuments', 'OLD'), 'old-richdocuments')
-  writeInfo(join(dst, 'idea_usage'), USAGE_VER, '31')
+  writeInfo(join(dst, 'idea_usage'), USAGE_VER, OLD_MAX)
   writeFileSync(join(dst, 'idea_usage', 'OLD'), 'old-usage')
 }
 
@@ -141,7 +145,7 @@ it('checksum mismatch exits non-zero and leaves existing apps untouched', async 
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /ERROR: .* checksum mismatch/)
   assert.match(readFileSync(join(dst, 'richdocuments/appinfo/info.xml'), 'utf8'), /<version>0\.0\.1<\/version>/)
-  assert.match(readFileSync(join(dst, 'idea_usage/appinfo/info.xml'), 'utf8'), /max-version="31"/)
+  assert.match(readFileSync(join(dst, 'idea_usage/appinfo/info.xml'), 'utf8'), new RegExp(`max-version="${OLD_MAX}"`))
   assert.ok(existsSync(join(dst, 'richdocuments/OLD')))
   assert.ok(!existsSync(join(dst, '.idea-upgrade-backup')))
   // Fail closed before the pin: config.php untouched, no state file.
@@ -179,8 +183,8 @@ it('does not touch a pre-existing backup with a different stamp', () => {
   assert.match(readFileSync(join(dst, 'richdocuments/appinfo/info.xml'), 'utf8'), new RegExp(`<version>${RD_VER.replace(/\./g, '\\.')}</version>`))
 })
 
-it(`idea_usage ${USAGE_VER} with max-version 31 is not treated as already current (version alone is not enough)`, () => {
-  writeInfo(join(dst, 'idea_usage'), USAGE_VER, '31')
+it(`idea_usage ${USAGE_VER} with an older max-version is not treated as already current (version alone is not enough)`, () => {
+  writeInfo(join(dst, 'idea_usage'), USAGE_VER, OLD_MAX)
   writeFileSync(join(dst, 'idea_usage', 'OLD'), 'old')
   rmSync(join(src, rdTarball))
   const sums = readFileSync(join(src, 'SHA256SUMS'), 'utf8').split('\n').filter(l => l.includes('idea_usage')).join('\n') + '\n'

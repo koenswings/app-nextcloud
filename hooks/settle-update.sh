@@ -30,11 +30,12 @@ IDEA_UPDATE_LOG_PREFIX=idea-settle-update
 # shellcheck disable=SC1091
 . "$HOOKS_DIR/update-lib.sh"
 
+idea_install_traps
 idea_refuse_argv "$@"
+idea_log_hop
 
-body=$(mktemp "${TMPDIR:-/tmp}/idea-settle.XXXXXX") || idea_die "cannot create temp file"
-# shellcheck disable=SC2064
-trap 'rm -f "$body"' EXIT
+body=
+idea_mktemp body idea-settle || idea_die "cannot create temp file"
 
 if ! code=$(idea_fetch_status "$body"); then
 	idea_not_yet "status.php unreachable"
