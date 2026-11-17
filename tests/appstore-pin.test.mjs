@@ -73,6 +73,8 @@ printf '200'
   occ = join(dir, 'occ')
   writeFileSync(occ, `#!/bin/sh
 if [ "$1" = "background-job:list" ]; then exit 0; fi
+# work's schema repairs (engine#456) are covered in work-update.test.mjs; not logged here.
+case "$1" in db:add-missing-*|maintenance:repair) exit 0 ;; esac
 printf '%s\\n' "$*" >> "${calls}"
 case "$1" in
   config:system:*) [ "$IDEA_OCC_CONFIG_FAIL" = 1 ] && { echo "occ failed" >&2; exit 1; }; exit 0 ;;
@@ -201,7 +203,7 @@ it('refuses (no change) when another config/*.config.php sets appstoreenabled', 
   const before = readFileSync(cfg, 'utf8')
   const r = prep()
   assert.equal(r.status, 1, r.stdout + r.stderr)
-  assert.match(r.stdout, /idea-prep-custom-apps: ERROR: app store pin failed: zz\.config\.php sets appstoreenabled/)
+  assert.match(r.stdout, /^ERROR: app store pin failed: zz\.config\.php sets appstoreenabled.* \[idea-prep-custom-apps\]$/m)
   assert.equal(readFileSync(cfg, 'utf8'), before)
   assert.ok(!existsSync(state))
 })
@@ -453,8 +455,11 @@ it('work calls idea_appstore_restore before its cron.php loop; settle has no res
   assert.ok(w.indexOf('idea_appstore_restore') > 0 && w.indexOf('idea_appstore_restore') < w.indexOf('while [ "$run" -le "$max" ]'))
   const st = strip(SETTLE)
   assert.doesNotMatch(st, /idea_appstore_restore|config:system|appstoreenabled|idea-update-state|STATE/)
-  // Its only rm is its own mktemp file.
-  assert.deepEqual(st.match(/rm -f [^\n']*/g), ['rm -f "$body"'])
+  // No rm of its own: its one temp file is made with idea_mktemp and removed by the
+  // update-lib.sh EXIT / TERM traps (engine#456 TERM safety).
+  assert.equal(st.match(/rm -f/g), null)
+  assert.match(st, /idea_mktemp body /)
+  assert.match(st, /idea_install_traps/)
 })
 
 it('compose mounts the whole hooks dir (appstore-pin.php is visible at /idea/hooks) and docs describe the pin and the >= rule', () => {

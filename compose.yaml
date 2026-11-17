@@ -43,6 +43,17 @@ x-app:
   # UPDATE_STAGES_UNSUPPORTED until #456 L. A run on pre-#463 Engine 80ba4af
   # is not a field proof: without prepare, occ upgrade disables Office and
   # idea_usage on an offline kit. Pi proof waits for #456 L.
+  # DRAFT (engine#456, 2026-11-17): fitted to Axle's #456 design comment and
+  # answers (Steve's decisions §8). IDEA_UPDATE_FROM / IDEA_UPDATE_TO = old /
+  # new x-app.version, passed with -e to every step (run and exec), logged as
+  # "hop A -> B". ERROR: / not yet: lines start the line (the Engine matches
+  # only there). A step timeout is SIGTERM to the in-container pid, SIGKILL
+  # 10 s later: every step script is TERM-safe and resumable (atomic config /
+  # state writes, temp cleanup, prepare rerun sweeps staging). work also runs
+  # occ db:add-missing-indices / -columns / -primary-keys and
+  # maintenance:repair --include-expensive before cron.php. Engine 41ba677+
+  # (engine#463) refuses this block with UPDATE_STAGES_UNSUPPORTED until the
+  # runner lands. See docs/update-stages.md.
   # Step order after Swap: prepare → Start → Health → verify → work → settle.
   # prepare and verify failures roll back; work and settle failures never roll
   # back (the path stops with migrationsPending). Fields: prepare/verify/work
