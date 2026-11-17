@@ -216,3 +216,23 @@ it('installs an app that is not in custom_apps yet (empty plan fields do not shi
   assert.doesNotMatch(r.stdout, /backed up idea_usage/)
   assert.ok(existsSync(join(dst, 'idea_usage/appinfo/info.xml')))
 })
+
+it('ignores a tarball SHA256SUMS does not list (left in bundled-apps by the previous release: Engine Swap copies over, never deletes)', () => {
+  // engine#456 chain rehearsal on idea03: 1.8's richdocuments-v8.8.3.tar.gz next to 2.0's
+  // richdocuments-v9.2.3.tar.gz made prepare fail with "not listed in SHA256SUMS".
+  writeFileSync(join(src, 'richdocuments-v0.0.1.tar.gz'), 'stale tarball from an older bundle, not a real archive')
+  seedOldApps()
+  const r = run()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /ignoring richdocuments-v0\.0\.1\.tar\.gz: not listed in SHA256SUMS/)
+  assert.match(r.stdout, new RegExp(`installed richdocuments ${RD_VER.replace(/\./g, '\\.')}`))
+  const rd = readFileSync(join(dst, 'richdocuments/appinfo/info.xml'), 'utf8')
+  assert.match(rd, new RegExp(`<version>${RD_VER.replace(/\./g, '\\.')}</version>`))
+})
+
+it('idea_version_from_tarball picks the tarball SHA256SUMS lists, not an older one that sorts first', () => {
+  writeFileSync(join(src, 'richdocuments-v0.0.1.tar.gz'), 'stale')
+  const r = spawnSync('sh', ['-c', `. "${join(root, 'hooks/update-lib.sh')}" >/dev/null 2>&1; idea_version_from_tarball richdocuments`],
+    { encoding: 'utf8', env: { PATH: process.env.PATH, IDEA_BUNDLED_APPS: src } })
+  assert.equal(r.stdout.trim(), RD_VER, r.stdout + r.stderr)
+})

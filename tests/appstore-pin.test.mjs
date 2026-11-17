@@ -471,3 +471,23 @@ it('compose mounts the whole hooks dir (appstore-pin.php is visible at /idea/hoo
   assert.match(rel, /appstoreenabled/)
   assert.match(rel, /pinned version or newer/)
 })
+
+it("reads the official image's apps.config.php (OC::$SERVERROOT) without a fatal error", { skip: NO_PHP }, () => {
+  // engine#456 chain rehearsal on idea03: including it outside Nextcloud was
+  // "Class OC not found" (php exit 255), so every prepare failed.
+  writeFileSync(join(html, 'config', 'apps.config.php'),
+    "<?php\n$CONFIG = array (\n  'apps_paths' => array (\n    0 => array ('path' => OC::$SERVERROOT.'/apps', 'url' => '/apps', 'writable' => false),\n    1 => array ('path' => OC::$SERVERROOT.'/custom_apps', 'url' => '/custom_apps', 'writable' => true),\n  ),\n);\n")
+  const r = pin()
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(readConfig().appstoreenabled, false)
+})
+
+it('refuses cleanly (exit 1, ERROR: line, nothing written) when another *.config.php throws', { skip: NO_PHP }, () => {
+  writeFileSync(join(html, 'config', 'bad.config.php'), "<?php\n$CONFIG = array ('x' => \\Nope\\Missing::thing());\n")
+  const before = readFileSync(cfg, 'utf8')
+  const r = pin()
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  assert.match(r.stdout, /^ERROR: cannot read bad\.config\.php \(Error: .*\); refusing to pin \[idea-appstore-pin\]$/m)
+  assert.equal(readFileSync(cfg, 'utf8'), before)
+  assert.ok(!existsSync(state))
+})

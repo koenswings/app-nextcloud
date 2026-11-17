@@ -96,8 +96,13 @@ idea_version_from_tarball() {
 	app="$1"
 	src="${IDEA_BUNDLED_APPS:-/idea-bundled-apps}"
 	tgz=
+	# Only the tarball the bundle's SHA256SUMS lists: an older one from the previous
+	# release can still be in bundled-apps/ (the Engine's Swap copies over, never deletes).
 	for f in "$src/$app"-v*.tar.gz; do
 		[ -f "$f" ] || continue
+		if [ -f "$src/SHA256SUMS" ] && ! awk -v f="$(basename "$f")" '$2==f {found=1; exit} END {exit found ? 0 : 1}' "$src/SHA256SUMS"; then
+			continue
+		fi
 		tgz=$f
 		break
 	done
