@@ -28,15 +28,15 @@ IDEA_UPDATE_LOG_PREFIX=idea-verify-update
 # shellcheck disable=SC1091
 . "$HOOKS_DIR/update-lib.sh"
 
+idea_install_traps
 idea_refuse_argv "$@"
 idea_log_hop
 idea_load_target_versions
 
 # status.php URL: IDEA_NC_HEALTH_URL (default http://127.0.0.1/status.php), read by idea_fetch_status.
 
-body=$(mktemp "${TMPDIR:-/tmp}/idea-verify.XXXXXX") || idea_die "cannot create temp file"
-# shellcheck disable=SC2064
-trap 'rm -f "$body"' EXIT
+body=
+idea_mktemp body idea-verify || idea_die "cannot create temp file"
 
 if ! code=$(idea_fetch_status "$body"); then
 	idea_die "status.php unreachable"

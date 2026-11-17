@@ -12,18 +12,22 @@
 // prepare runs as a one-off with --no-deps (MariaDB is stopped), as root (occ refuses
 // to run as a user that does not own config.php), and on a tree whose code is already
 // the new major (occ is in "needs upgrade" mode). So this script edits config.php the
-// same way Nextcloud's own Config::writeData() does (var_export of $CONFIG, in-place
-// write under flock, mode 0640), which keeps the owner (33) and the inode. work
+// same content Nextcloud's own Config::writeData() writes (var_export of $CONFIG,
+// mode 0640, owner and group of the old file), but atomically (temp + rename). work
 // (the first stage after verify) restores the previous value with occ once the DB is
 // up (update-lib.sh idea_appstore_restore).
 //
 // Runs only as x-app.update.prepare. Two properties make it unsafe anywhere else:
 //  - It include()s config.php and every other config/*.config.php as root, inside the
 //    one-off prepare container (not on the host). These are the App's own files.
-//  - The config.php write is NOT atomic: like Nextcloud's writeData() it truncates and
-//    rewrites in place. A crash or a full disk between the two leaves an empty or partial
-//    config.php. That is acceptable only because the Engine restores the pre-update
-//    snapshot after any failed or interrupted prepare (Axle addendum gap 6, policy 1).
+//  - TERM-safe (engine#456: a step timeout is SIGTERM, then SIGKILL after 10 s). Both
+//    writes are atomic: the new content goes to a temp file in the same directory
+//    (config/.config.php.idea-tmp-<pid>, <state>.tmp-<pid>), is fsync'd, gets the old
+//    file's mode/owner/group, and is rename()d over the target. A kill at any point
+//    leaves the old or the new file, never a partial one. A rerun removes stale temp
+//    files of both kinds first. (config.php gets a new inode; the bind mount is the
+//    whole data/nextcloud dir, so nothing holds the old one.) The Engine still restores
+//    the snapshot after any failed or interrupted prepare (gap 6, policy 1).
 //    Do not reuse this script outside prepare.
 //
 // Refusals before anything is written (Axle review of the pin, 2026-11-16):
@@ -55,10 +59,52 @@
 // config/*.config.php (Nextcloud merges those over config.php) or via env
 // NC_appstoreenabled (Nextcloud's env override).
 //
-// Output: lines prefixed "idea-appstore-pin:"; errors as "idea-appstore-pin: ERROR: ...".
+// Output: info lines "idea-appstore-pin: ..."; errors START with "ERROR:" (engine#456:
+// the Engine matches it only at the start of a line): "ERROR: ... [idea-appstore-pin]".
+// Tests only: IDEA_PIN_TEST_DIE_AT=state-tmp|config-tmp exits 137 right after the
+// temp file is written and before the rename, like a SIGKILL there.
 
 function out($msg) { fwrite(STDOUT, "idea-appstore-pin: $msg\n"); }
-function fail($msg) { out("ERROR: $msg"); exit(1); }
+function fail($msg) { fwrite(STDOUT, "ERROR: $msg [idea-appstore-pin]\n"); exit(1); }
+function test_die_at($point) {
+	if (getenv('IDEA_PIN_TEST_DIE_AT') === $point) {
+		exit(137);
+	}
+}
+
+// Write $content to $path atomically: same-dir temp, fsync, copy mode/owner/group, rename.
+function atomic_write($path, $tmp, $content, $mode, $diePoint) {
+	$fp = @fopen($tmp, 'x');
+	if (!is_resource($fp)) {
+		return "cannot create $tmp";
+	}
+	$ok = fwrite($fp, $content) === strlen($content) && fflush($fp);
+	if ($ok && function_exists('fsync')) {
+		$ok = fsync($fp);
+	}
+	fclose($fp);
+	if (!$ok) {
+		@unlink($tmp);
+		return "writing $tmp failed";
+	}
+	@chmod($tmp, $mode);
+	if (file_exists($path)) {
+		$uid = @fileowner($path);
+		$gid = @filegroup($path);
+		if ($uid !== false && $uid !== @fileowner($tmp)) {
+			@chown($tmp, $uid);
+		}
+		if ($gid !== false && $gid !== @filegroup($tmp)) {
+			@chgrp($tmp, $gid);
+		}
+	}
+	test_die_at($diePoint);
+	if (!@rename($tmp, $path)) {
+		@unlink($tmp);
+		return "rename $tmp -> $path failed";
+	}
+	return null;
+}
 
 function read_config($path) {
 	$CONFIG = null;
@@ -170,6 +216,15 @@ if (!empty($config['config_is_read_only'])) {
 	fail("config_is_read_only is set in config.php; Nextcloud would refuse the restore, so the pin is refused");
 }
 
+// Stale temp files from an interrupted (killed) earlier run.
+foreach (array_merge(glob($configDir . '/.config.php.idea-tmp-*') ?: [], glob($statePath . '.tmp-*') ?: []) as $stale) {
+	if (@unlink($stale)) {
+		out("removed stale temp file " . basename($stale) . " from an interrupted run");
+	} else {
+		fail("cannot remove stale temp file $stale");
+	}
+}
+
 $exists = array_key_exists($key, $config);
 $previous = encode_previous($exists, $exists ? $config[$key] : null);
 if ($previous === null) {
@@ -201,9 +256,9 @@ if (file_exists($statePath)) {
 	$body = "# IDEA app store pin, written by x-app.update.prepare (hooks/appstore-pin.php).\n"
 		. "# work (hooks/work-update.sh) restores this value with occ and then removes this file.\n"
 		. "previous=$previous\n";
-	if (@file_put_contents($tmp, $body) === false || !@rename($tmp, $statePath)) {
-		@unlink($tmp);
-		fail("cannot write state file $statePath");
+	$err = atomic_write($statePath, $tmp, $body, 0644, 'state-tmp');
+	if ($err !== null) {
+		fail("cannot write state file $statePath ($err)");
 	}
 	out("recorded previous=$previous in $statePath");
 }
@@ -221,24 +276,15 @@ if ($exists && $config[$key] === false) {
 	if ($df !== false && $df < (float)(strlen($content) + 10240)) {
 		fail(dirname($configPath) . " does not have enough free space for config.php (need " . (strlen($content) + 10240) . " bytes, have " . (int)$df . "); not writing");
 	}
-	$fp = @fopen($configPath, 'r+');
-	if (!is_resource($fp)) {
-		fail("cannot open $configPath for writing");
+	// Nextcloud refuses to write a config.php that is not writable; so do we (the
+	// rename below would otherwise replace a read-only file).
+	if (!is_writable($configPath)) {
+		fail("$configPath is not writable; not writing");
 	}
-	if (!flock($fp, LOCK_EX)) {
-		fclose($fp);
-		fail("cannot lock $configPath");
+	$err = atomic_write($configPath, $configDir . '/.config.php.idea-tmp-' . getmypid(), $content, 0640, 'config-tmp');
+	if ($err !== null) {
+		fail("writing $configPath failed ($err)");
 	}
-	$ok = ftruncate($fp, 0) && fwrite($fp, $content) === strlen($content) && fflush($fp);
-	if ($ok && function_exists('fsync')) {
-		$ok = fsync($fp);
-	}
-	flock($fp, LOCK_UN);
-	fclose($fp);
-	if (!$ok) {
-		fail("writing $configPath failed");
-	}
-	@chmod($configPath, 0640);
 	out("set $key=false in config.php");
 }
 

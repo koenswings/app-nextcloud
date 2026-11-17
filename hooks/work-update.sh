@@ -34,6 +34,7 @@ IDEA_UPDATE_LOG_PREFIX=idea-work-update
 # shellcheck disable=SC1091
 . "$HOOKS_DIR/update-lib.sh"
 
+idea_install_traps
 idea_refuse_argv "$@"
 idea_log_hop
 
@@ -59,16 +60,16 @@ case "${IDEA_WORK_SCHEMA_REPAIR:-1}" in
 	1)
 		for cmd in db:add-missing-indices db:add-missing-columns db:add-missing-primary-keys; do
 			idea_log "occ $cmd"
-			idea_run_occ "$cmd" --no-interaction >/dev/null || idea_die "occ $cmd failed"
+			idea_run_occ_bg "$cmd" --no-interaction >/dev/null || idea_die "occ $cmd failed"
 		done
 		case "${IDEA_WORK_REPAIR_EXPENSIVE:-1}" in
 			0)
 				idea_log "occ maintenance:repair"
-				idea_run_occ maintenance:repair --no-interaction >/dev/null || idea_die "occ maintenance:repair failed"
+				idea_run_occ_bg maintenance:repair --no-interaction >/dev/null || idea_die "occ maintenance:repair failed"
 				;;
 			1)
 				idea_log "occ maintenance:repair --include-expensive"
-				idea_run_occ maintenance:repair --include-expensive --no-interaction >/dev/null \
+				idea_run_occ_bg maintenance:repair --include-expensive --no-interaction >/dev/null \
 					|| idea_die "occ maintenance:repair --include-expensive failed"
 				;;
 			*) idea_die "IDEA_WORK_REPAIR_EXPENSIVE must be 0 or 1 (got ${IDEA_WORK_REPAIR_EXPENSIVE})" ;;
@@ -85,7 +86,7 @@ esac
 run=1
 while [ "$run" -le "$max" ]; do
 	idea_log "cron.php run $run of $max"
-	if ! idea_run_cron; then
+	if ! idea_run_cron_bg; then
 		idea_die "cron.php failed on run $run of $max"
 	fi
 	jobs_status=0

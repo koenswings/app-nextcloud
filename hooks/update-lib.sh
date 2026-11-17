@@ -12,22 +12,73 @@
 # exec -u. Compose declares user: "33" on verify, work and settle, so occ and
 # cron.php are not invoked as root. This lib has no root→www-data fallback.
 #
-# Error lines use the prefixes the Engine captures: "ERROR:" and "not yet:"
-# (capped at 200 characters on the Engine side). Scripts must not print secrets.
+# Error and pending lines START with "ERROR:" / "not yet:" (engine#456: the
+# Engine matches them only at the start of a line, after leading whitespace,
+# and keeps the last one, capped at 200 characters). The script name goes at
+# the end of the line in brackets. Info lines are "<script>: ...".
+# Scripts must not print secrets.
+#
+# TERM-safe (engine#456: on a step timeout the Engine sends SIGTERM to the
+# in-container pid, then SIGKILL after 10 s). idea_install_traps sets an EXIT
+# trap that removes this script's temp files (idea_mktemp) and TERM/INT/HUP
+# traps that also stop a child started with idea_run, print one ERROR: line
+# and exit 128+signal. Long commands (occ repairs, cron.php) run through
+# idea_run so the trap fires at once instead of after the child. Temp files are
+# only ever created through idea_mktemp in the main shell (never inside $(...),
+# whose traps are reset). Nothing here writes config.php directly; occ does.
 
 idea_log() { echo "${IDEA_UPDATE_LOG_PREFIX:-idea-update}: $*"; }
+idea_die() { echo "ERROR: $* [${IDEA_UPDATE_LOG_PREFIX:-idea-update}]"; exit 1; }
+idea_not_yet() { echo "not yet: $* [${IDEA_UPDATE_LOG_PREFIX:-idea-update}]"; exit 3; }
 
-# engine#456 design §8 Q7 (Steve, 2026-11-17): the Engine passes the
-# non-secret IDEA_UPDATE_FROM / IDEA_UPDATE_TO to every step. Logged for the
-# trace only; no step depends on them (an Engine that does not set them, or a
-# manual run, behaves the same).
+IDEA_TMP_FILES=
+IDEA_CHILD=
+# idea_mktemp VAR NAME: create a temp file, register it for cleanup, set VAR.
+idea_mktemp() {
+	_idea_f=$(mktemp "${TMPDIR:-/tmp}/$2.XXXXXX") || return 1
+	IDEA_TMP_FILES="$IDEA_TMP_FILES $_idea_f"
+	eval "$1=\$_idea_f"
+}
+idea_cleanup() {
+	for _idea_f in $IDEA_TMP_FILES; do rm -f "$_idea_f"; done
+	IDEA_TMP_FILES=
+}
+idea_on_signal() {
+	trap - EXIT
+	if [ -n "$IDEA_CHILD" ]; then
+		kill -TERM "$IDEA_CHILD" 2>/dev/null || :
+	fi
+	idea_cleanup
+	echo "ERROR: interrupted by SIG$1 [${IDEA_UPDATE_LOG_PREFIX:-idea-update}]"
+	exit "$2"
+}
+idea_install_traps() {
+	trap idea_cleanup EXIT
+	trap 'idea_on_signal TERM 143' TERM
+	trap 'idea_on_signal INT 130' INT
+	trap 'idea_on_signal HUP 129' HUP
+}
+# idea_run CMD...: run a real command (not a shell function) in the background
+# and wait, so a TERM is handled now and forwarded to it. stdin is /dev/null.
+idea_run() {
+	"$@" < /dev/null &
+	IDEA_CHILD=$!
+	_idea_st=0
+	wait "$IDEA_CHILD" || _idea_st=$?
+	IDEA_CHILD=
+	return "$_idea_st"
+}
+
+# engine#456 design §8 Q7 (Steve, 2026-11-17; Axle's answer): the Engine
+# passes IDEA_UPDATE_FROM / IDEA_UPDATE_TO, the old and new x-app.version
+# (e.g. 1.8-31.0.14 -> 2.0-32.0.15), with -e on both compose run and exec.
+# Non-secret. Logged for the trace only; no step depends on them (an Engine
+# that does not set them, or a manual run, behaves the same).
 idea_log_hop() {
 	if [ -n "${IDEA_UPDATE_FROM:-}" ] || [ -n "${IDEA_UPDATE_TO:-}" ]; then
 		idea_log "hop ${IDEA_UPDATE_FROM:-?} -> ${IDEA_UPDATE_TO:-?}"
 	fi
 }
-idea_die() { idea_log "ERROR: $*"; exit 1; }
-idea_not_yet() { idea_log "not yet: $*"; exit 3; }
 
 # Gap 2 accepted: the Engine overrides entrypoint to [command] with an empty
 # command. Apps must not rely on ignoring leftover argv (apache2-foreground).
@@ -51,13 +102,9 @@ idea_version_from_tarball() {
 		break
 	done
 	[ -n "$tgz" ] || return 1
-	tmp=$(mktemp "${TMPDIR:-/tmp}/idea-target-$app.XXXXXX") || return 1
-	if ! tar -xOf "$tgz" "$app/appinfo/info.xml" > "$tmp" 2>/dev/null; then
-		rm -f "$tmp"
-		return 1
-	fi
-	ver=$(idea_xml_version "$tmp")
-	rm -f "$tmp"
+	# No temp file: this runs inside $(...), where the cleanup traps do not apply.
+	xml=$(tar -xOf "$tgz" "$app/appinfo/info.xml" 2>/dev/null) || return 1
+	ver=$(printf '%s\n' "$xml" | sed -n 's|^[[:space:]]*<version>\([^<]*\)</version>.*|\1|p' | head -n 1)
 	[ -n "$ver" ] || return 1
 	printf '%s' "$ver"
 }
@@ -91,6 +138,22 @@ idea_load_target_versions() {
 	fi
 	[ -n "$IDEA_RD_VER" ] || idea_die "cannot determine richdocuments target version (set IDEA_VERIFY_RICHDOCUMENTS_VERSION, ship a tarball, or add IDEA_APP_VERSION to update-targets)"
 	[ -n "$IDEA_USAGE_VER" ] || idea_die "cannot determine idea_usage target version (set IDEA_VERIFY_IDEA_USAGE_VERSION, ship a tarball, or add IDEA_APP_VERSION to update-targets)"
+}
+
+# occ / cron.php through idea_run (TERM-forwarding), for the long work steps.
+idea_run_occ_bg() {
+	if [ -n "${OCC:-}" ]; then
+		idea_run "$OCC" "$@"
+		return
+	fi
+	idea_run php /var/www/html/occ "$@"
+}
+idea_run_cron_bg() {
+	if [ -n "${IDEA_CRON:-}" ]; then
+		idea_run "$IDEA_CRON"
+		return
+	fi
+	idea_run php /var/www/html/cron.php
 }
 
 # occ as the current user. Engine declares user: "33"; no root fallback.
@@ -135,12 +198,9 @@ idea_status_has() {
 # IDEA_PENDING_JOB_PATTERN. Missing-command fallback is intentional.
 idea_list_upgrade_jobs() {
 	pattern="${IDEA_PENDING_JOB_PATTERN:-Migration|BackgroundRepair|RepairJob}"
-	out=$(mktemp "${TMPDIR:-/tmp}/idea-jobs.XXXXXX") || return 3
-	err=$(mktemp "${TMPDIR:-/tmp}/idea-jobs-err.XXXXXX") || { rm -f "$out"; return 3; }
+	# No temp files: callers run this inside $(...) (traps do not apply there).
 	status=0
-	idea_run_occ background-job:list > "$out" 2>"$err" || status=$?
-	combined=$(cat "$out" "$err")
-	rm -f "$out" "$err"
+	combined=$(idea_run_occ background-job:list 2>&1) || status=$?
 	if [ "$status" -ne 0 ]; then
 		if printf '%s\n' "$combined" | grep -Eqi 'not defined|unknown command|Command "[^"]+" is not defined|There are no commands defined'; then
 			return 2

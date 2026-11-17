@@ -30,13 +30,42 @@ Start (it refuses to skip a Nextcloud major). App re-enable after Start is the b
 (`25-idea-usage.sh`, `30-idea-office.sh`, fail open); verify is the fail-closed net. MariaDB system
 tables: `MARIADB_AUTO_UPGRADE=1` on the db entrypoint.
 
-Engine env (design §8 Q7): `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` are logged as `hop A -> B` by every
-step; no step depends on them. The Engine adds no other env; `run` and `exec` see the compose env
+Engine env (design §8 Q7, Axle's answer): `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` are the old and new
+`x-app.version` (for example `1.8-31.0.14` → `2.0-32.0.15`), passed with `-e` on both `compose run`
+(prepare) and `compose exec` (verify / work / settle). Every step logs them as `hop A -> B`; no step
+depends on them. The Engine adds no other env; `run` and `exec` also see the compose env
 (`IDEA_APP_VERSION`).
+
+Output lines: the Engine matches `ERROR:` and `not yet:` only at the **start** of a line (after
+leading whitespace) and keeps the last one (≤ 200 characters). So every error / pending line starts
+with `ERROR:` / `not yet:` and names the script at the end: `ERROR: status.php unreachable
+[idea-verify-update]`. Info lines are `<script>: …`.
+
+TERM safety: on a step timeout the Engine sends SIGTERM to the in-container pid, then SIGKILL after
+10 s. Every step script traps TERM / INT / HUP: it stops its running child (occ, `cron.php`, `tar`,
+started in the background and waited on so the trap fires at once), removes its own temp files,
+prints `ERROR: interrupted by SIGTERM [<script>]` and exits 143. Temp files are made only in the main
+shell (never inside `$(...)`, where traps are reset). Writes are atomic:
+
+- `appstore-pin.php` writes the state file and `config.php` each to a temp file in the same
+  directory (`<state>.tmp-<pid>`, `config/.config.php.idea-tmp-<pid>`), fsyncs, copies mode / owner /
+  group, then renames. The state file is written first. A kill leaves the old or the new file, never
+  a partial one; a rerun removes stale temp files first. A read-only `config.php` is still refused.
+- prepare only renames (`mv` within `custom_apps`) and extracts into a dot-named staging dir. A rerun
+  removes stale plan / info files, moves any leftover `.idea-prep-staging-*` into
+  `.idea-upgrade-backup/<name>-interrupted-<ts>` (never `rm -rf`), re-extracts an app whose old tree was
+  already moved aside, and chowns a tree that is already in place. Kill points are covered by
+  `tests/term-safety.test.mjs` (`IDEA_PREP_TEST_KILL_AT`, `IDEA_PIN_TEST_DIE_AT`, tests only).
+- work: the app store restore is occ (Nextcloud's own config write) and removes the state file only
+  after occ succeeded, so a rerun restores again; the schema repairs and `cron.php` are idempotent.
+- verify and settle write nothing but their own temp file.
+
+The Engine still restores the snapshot after any failed or interrupted prepare or verify; the App's
+resumability is defensive.
 
 Env knobs (tests and emergencies only): `IDEA_WORK_SCHEMA_REPAIR=0`, `IDEA_WORK_REPAIR_EXPENSIVE=0`,
 `IDEA_WORK_CRON_RUNS`, `IDEA_NC_HEALTH_URL`, `IDEA_BUNDLED_APPS`, `IDEA_CUSTOM_APPS`.
 
 Tests: `node --test tests/` (`x-app-update`, `prep-custom-apps-for-upgrade`, `appstore-pin`,
-`verify-update`, `work-update`, `settle-update`, `version-compare`). Set `AAD_CHECK_COMPOSE` to
+`verify-update`, `work-update`, `settle-update`, `version-compare`, `term-safety`). Set `AAD_CHECK_COMPOSE` to
 agent-app-dev `script/check-compose.mjs` to also run its gap-12 `x-app.update` rules.
