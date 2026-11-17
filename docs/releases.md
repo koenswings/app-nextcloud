@@ -5,6 +5,92 @@ Kits get a release only through Engine `updateApp` (idea#374). Until a Nextcloud
 is retagged and published (Koen YES), `nextcloud-app` is pinned to the official upstream
 index; MariaDB and CODE stay on the same pins as 1.2.
 
+## 4.0-34.0.6
+
+**DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
+reserved). No image publish, no tag. Stacked on the 3.0-33.0.11 draft.
+
+- **Nextcloud major hop:** official `library/nextcloud` `33.0.11-apache` → `34.0.6-apache`
+  (latest 34.0.x as of 2026-11-15). App major 3.0 → 4.0. Bundle name `nextcloud-4.0-34.0.6`.
+  `x-app.updatesFrom: [3]` (repo convention: a list of App majors; 3 covers the 3.x line
+  including 3.0-33.0.11). 4.0 does not list 2 or 1: Nextcloud cannot skip majors, and a
+  2.0 (Nextcloud 32) or 1.8 (Nextcloud 31) → 4.0 (Nextcloud 34) jump would be refused.
+  Axle's chained path is a sequence of such hops; each hop still has to pass `updatesFrom`
+  on its own.
+- **Images:** `nextcloud-app` is pinned to the upstream multi-platform index
+  `nextcloud:34.0.6-apache@sha256:3031e7f87baaceb863a755921ebf463bc26ea71855c07ad7858e2ae25a5a0ad7`
+  (`linux/arm64` variant v8 is in the index, platform manifest
+  `sha256:f01db3987605b0d69905b13e88f55fc84e68a5c202aaa3985af861aad19d5354`; base
+  `php:8.5-apache-trixie`). The usual IDEA retag `koenswings/nextcloud:4.0-34.0.6` is
+  not published yet (needs Koen YES). check-compose and the Engine pin
+  check (`saveName()`, idea#322) require `repo:tag@sha256:<64 hex>` — a digest-only pin
+  and an unpublished placeholder are both refused — so the compose uses the published
+  official tag+index digest until the retag exists and the pin is swapped. MariaDB
+  (`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404`) and CODE
+  (`koenswings/nextcloud-code:1.0-24.04.13.2`) are unchanged since 1.2. The 11.8 MariaDB
+  move is **not** in this hop (idea#548 Q9: separate hop once 33 is healthy, with
+  `MARIADB_AUTO_UPGRADE=1`). `serverid` / `NC_serverid` stays unset
+  (a stable value is a later item).
+- **bundled apps:** `richdocuments` 11.1.3 (`info.xml` min-version 34, max-version 34).
+  `idea_usage` stays 1.0.0 with the Nextcloud range widened to min-version 31, max-version 34
+  (version bump to 1.0.1 is deferred to the release decision). 10.3.3 is not shipped: a
+  fresh 34 install would otherwise extract the 33-only tarball first.
+- **Prepare hook:** `x-app.update.prepare` runs `hooks/prep-custom-apps-for-upgrade.sh`
+  after Swap and before Start as a one-off (Axle addendum). The Engine uses a generated
+  override (`entrypoint: [command]`, empty command, no leftover argv):
+  `docker compose run --rm --no-deps --no-TTY --user 0 nextcloud-app`. `user: "0"` is
+  declared (gaps 10 and 13 accepted). The script is idempotent as a defensive rule
+  (SHA256SUMS, mv backups, no occ; an interrupted prepare always restores the snapshot)
+  and reads target versions from the tarballs.
+- **Verify hook:** `x-app.update.verify` runs `hooks/verify-update.sh` once after Health
+  (`docker compose exec -T -u 33`; timeout 120). Exit 0 passes; any other exit is
+  `VERIFY_FAILED` and rolls back. Checks `status.php` (installed, maintenance false,
+  needsDbUpgrade false) and `occ app:list` showing richdocuments 11.1.3 or newer enabled and
+  idea_usage 1.0.0 enabled. Versions come from the bundled tarball / `hooks/update-targets`
+  (keyed by `IDEA_APP_VERSION`, which matches `x-app.version`).
+- **Work hook:** `x-app.update.work` runs `hooks/work-update.sh` once after verify
+  (`docker compose exec -T -u 33`; timeout 3600). It runs `cron.php` up to three times
+  (Nextcloud: run it 2-3 times after a major). A non-zero exit or timeout stops the path
+  with `migrationsPending` and does not roll back.
+- **Settle check:** `x-app.update.settle` runs `hooks/settle-update.sh` after work
+  (`docker compose exec -T -u 33`; exit 0 settled, 3 not yet, other error; interval 60,
+  timeout 3600). `user: "33"` is declared (no in-script root→www-data fallback).
+  Read-only: `status.php` plus a pending-upgrade-job probe. It does not run `cron.php`
+  and does not re-check app versions (that is verify's job, because it rolls back).
+- **healthTimeout:** 600 s (desk estimate for a major hop; `start_period` matches).
+  Re-measure on a pool Pi before locking the release.
+- **Admin-facing breaking changes (idea#548 Q4):** desk research in idea#548 §8.5.
+  The admin manual has no "Upgrade to Nextcloud 34" critical-changes page; Nextcloud
+  maintainers say there are no critical admin changes. PHP 8.5 is provided by the official
+  image. See idea#548 §8.5 for shipped apps (`office`, `files_lock`, `appstore`) and API notes.
+- **App store pin and richdocuments >= rule (2026-11-16):** prepare sets
+  `appstoreenabled=false` before `occ upgrade` and work restores the previous value right
+  after verify (settle stays read-only); verify accepts richdocuments at the pinned version or newer (semver compare).
+  Details, state file and rollback behaviour: "App store pin (update stages, 2.0 and later)"
+  at the end of this file.
+
+**Migration:** Nextcloud's own database upgrade on the first start of 4.0 (33.0.11 →
+34.0.6), after Prepare has staged the new apps. Files and accounts are kept.
+Nextcloud is in maintenance mode until the upgrade has finished. MariaDB and CODE
+are unchanged.
+
+**Database:** no database image upgrade in this release. MariaDB stays
+`koenswings/nextcloud-mariadb:1.0-11.7.2-MariaDB-ubu2404` (idea#548 Q9: the MariaDB 11.8
+upgrade is a separate release, app-nextcloud#31). Nextcloud 34's setup check accepts
+MariaDB 10.6–11.8; only Nextcloud's own schema upgrade runs.
+
+- **engine#456 (2026-11-17, draft):** same step scripts as `kid/456-x-app-update`: work also runs
+  `occ db:add-missing-indices`, `db:add-missing-columns`, `db:add-missing-primary-keys` and
+  `maintenance:repair --include-expensive` before `cron.php` (switches `IDEA_WORK_SCHEMA_REPAIR`,
+  `IDEA_WORK_REPAIR_EXPENSIVE`); every step logs `IDEA_UPDATE_FROM` / `IDEA_UPDATE_TO` (old / new
+  `x-app.version`); `ERROR:` / `not yet:` start the line; all steps are TERM-safe and resumable
+  (atomic `config.php` / state writes, `tests/term-safety.test.mjs`). See
+  [update-stages.md](./update-stages.md).
+
+**Tested:** unit tests and agent-app-dev `check-compose --release` pass on the box. Pi proof
+pending (pool reserved; also needs the Engine prepare/verify/work/settle steps). `engine_tested`
+is left at the 1.7 value (cba91a6) until that proof.
+
 ## 3.0-33.0.11
 
 **DRAFT** (draft PR; path agreed in idea#548, merged 2026-11-15). Pi proof pending (pool
