@@ -200,11 +200,24 @@ if (!isset($config['version'])) {
 
 // Nextcloud merges every other config/*.config.php over config.php.
 $configDir = dirname($configPath);
+// The official image's config/apps.config.php uses OC::$SERVERROOT (and could use other
+// Nextcloud code). Outside Nextcloud that class does not exist, so an include was a fatal
+// "Class OC not found" (php exit 255; seen on idea03, engine#456 chain rehearsal). Provide
+// the one static Nextcloud defines before it reads config (server root = parent of config/),
+// and turn any other error in an extra file into a clean refusal.
+if (!class_exists('OC', false)) {
+	eval('class OC { public static $SERVERROOT = ""; }');
+	OC::$SERVERROOT = dirname($configDir);
+}
 foreach (glob($configDir . '/*.config.php') ?: [] as $extra) {
 	if (realpath($extra) === realpath($configPath)) {
 		continue;
 	}
-	$extraConfig = read_config($extra);
+	try {
+		$extraConfig = read_config($extra);
+	} catch (\Throwable $e) {
+		fail('cannot read ' . basename($extra) . ' (' . get_class($e) . ': ' . $e->getMessage() . '); refusing to pin');
+	}
 	if (is_array($extraConfig) && array_key_exists($key, $extraConfig)) {
 		fail(basename($extra) . " sets $key; it overrides config.php, so the app store pin cannot take effect");
 	}
