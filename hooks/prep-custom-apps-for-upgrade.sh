@@ -64,11 +64,73 @@
 set -eu
 
 log() { echo "idea-prep-custom-apps: $*"; }
-die() { log "ERROR: $*"; exit 1; }
+# engine#456: the Engine matches ERROR: only at the start of a line.
+die() { echo "ERROR: $* [idea-prep-custom-apps]"; exit 1; }
+
+# TERM-safe (engine#456: timeout = SIGTERM to this pid, SIGKILL 10 s later).
+# Every change below is a rename (mv inside one filesystem) or a write into a
+# dot-named temp/staging path that a rerun sweeps, so a kill at any point
+# leaves either the old tree, the new tree, or no tree plus a backup, never a
+# half-extracted custom_apps/<app>. A rerun (Resume after a rollback, or by
+# hand) finishes the job:
+#   - custom_apps/<app> moved to .idea-upgrade-backup but not replaced yet:
+#     the app is "not in custom_apps", so it is extracted again;
+#   - leftover .idea-prep-staging-* dirs: moved into .idea-upgrade-backup as
+#     <name>-interrupted-<ts> (never rm -rf), then a fresh staging dir is used;
+#   - leftover .idea-prep-plan-* / .idea-prep-*-info-*.xml files: removed;
+#   - new tree in place but chown not done: "already at", chowned again;
+#   - pin interrupted: state file and config.php are each written to a temp
+#     file in the same directory and renamed (appstore-pin.php), and the
+#     state file is written first, so the rerun records the real previous value.
+# The trap removes this run's plan/info temp files and stops a running tar.
+CHILD=
+INFO_TMP=
+plan=
+# shellcheck disable=SC2329  # called from the traps below
+cleanup() {
+	[ -z "$plan" ] || rm -f "$plan"
+	[ -z "$INFO_TMP" ] || rm -f "$INFO_TMP"
+}
+# shellcheck disable=SC2329  # called from the traps below
+on_signal() {
+	trap - EXIT
+	if [ -n "$CHILD" ]; then
+		kill -TERM "$CHILD" 2>/dev/null || :
+	fi
+	cleanup
+	echo "ERROR: interrupted by SIG$1 (rerun resumes) [idea-prep-custom-apps]"
+	exit "$2"
+}
+trap cleanup EXIT
+trap 'on_signal TERM 143' TERM
+trap 'on_signal INT 130' INT
+trap 'on_signal HUP 129' HUP
+# Run a real command in the background and wait (a TERM is handled at once).
+run_bg() {
+	"$@" < /dev/null &
+	CHILD=$!
+	st=0
+	wait "$CHILD" || st=$?
+	CHILD=
+	return "$st"
+}
+# Tests only: IDEA_PREP_TEST_KILL_AT=<point>:<signal> kills this shell at a
+# named point (after-backup, after-extract, before-pin) to prove resumability.
+test_kill_at() {
+	case "${IDEA_PREP_TEST_KILL_AT:-}" in
+		"$1":*) kill "-${IDEA_PREP_TEST_KILL_AT#*:}" "$$" ;;
+	esac
+}
 
 # Gap 2 accepted: Engine must pass an empty command. Do not ignore leftover argv.
 if [ "$#" -ne 0 ]; then
 	die "unexpected arguments: $* (Engine must pass an empty command)"
+fi
+
+# engine#456 §8 Q7: IDEA_UPDATE_FROM / IDEA_UPDATE_TO are the old and new
+# x-app.version (e.g. 1.8-31.0.14), passed with -e on compose run. Logged only.
+if [ -n "${IDEA_UPDATE_FROM:-}" ] || [ -n "${IDEA_UPDATE_TO:-}" ]; then
+	log "hop ${IDEA_UPDATE_FROM:-?} -> ${IDEA_UPDATE_TO:-?}"
 fi
 
 SRC="${IDEA_BUNDLED_APPS:-/idea-bundled-apps}"
@@ -145,13 +207,24 @@ done < "$SRC/SHA256SUMS"
 
 mkdir -p "$DST" || die "cannot create $DST"
 
+# Sweep what an interrupted earlier run left (see TERM-safe above).
+for old in "$DST"/.idea-prep-plan-* "$DST"/.idea-prep-*-info-*.xml; do
+	[ -f "$old" ] || continue
+	rm -f "$old" || die "cannot remove stale $old"
+	log "removed stale $(basename "$old") from an interrupted run"
+done
+for old in "$DST"/.idea-prep-staging-*; do
+	[ -d "$old" ] || continue
+	mkdir -p "$BACKUP" || die "cannot create $BACKUP"
+	dest="$BACKUP/$(basename "$old" | sed 's/^\.//')-interrupted-$(ts)"
+	move_aside "$old" "$dest"
+	log "moved interrupted staging $(basename "$old") to $dest"
+done
+
 # Pass 1: plan every app after checksums, and refuse colliding backup dests
 # before any mv. Stamp is chosen once per app so preflight and the move agree.
 plan="$DST/.idea-prep-plan-$$"
 : > "$plan"
-cleanup_plan() { rm -f "$plan"; }
-# Also drop any leftover info_tmp from a failed plan. plan is a file, not a tree.
-trap cleanup_plan EXIT
 
 for tgz in "$SRC"/*.tar.gz; do
 	f=$(basename "$tgz")
@@ -162,6 +235,7 @@ for tgz in "$SRC"/*.tar.gz; do
 	[ -n "$app" ] || die "empty app name from $f"
 
 	info_tmp="$DST/.idea-prep-$app-info-$$.xml"
+	INFO_TMP=$info_tmp
 	if ! tar -xOf "$tgz" "$app/appinfo/info.xml" > "$info_tmp"; then
 		rm -f "$info_tmp"
 		die "cannot read $app/appinfo/info.xml from $f"
@@ -238,6 +312,7 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 		fi
 		move_aside "$DST/$app" "$dest"
 		log "backed up $app $old_ver to $dest"
+		test_kill_at after-backup
 	fi
 
 	stage="$DST/.idea-prep-staging-$app-$stamp"
@@ -245,7 +320,7 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 		die "staging dir already exists: $stage"
 	fi
 	mkdir -p "$stage" || die "cannot mkdir $stage"
-	if ! tar -xzf "$tgz" -C "$stage"; then
+	if ! run_bg tar -xzf "$tgz" -C "$stage"; then
 		leftover="$BACKUP/${app}-staging-failed-$stamp"
 		move_aside "$stage" "$leftover"
 		die "extract $(basename "$tgz") failed (staging moved to $leftover)"
@@ -255,6 +330,7 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 		move_aside "$stage" "$leftover"
 		die "$(basename "$tgz") does not contain $app/appinfo/info.xml (staging moved to $leftover)"
 	fi
+	test_kill_at after-extract
 	got_ver=$(xml_version "$stage/$app/appinfo/info.xml")
 	got_max=$(xml_max "$stage/$app/appinfo/info.xml")
 	if [ "$got_ver" != "$want_ver" ] || [ "$got_max" != "$want_max" ]; then
@@ -277,6 +353,8 @@ while IFS="$(printf '\t')" read -r kind app tgz stamp dest want_ver want_max old
 	log "installed $app $want_ver (max-version $want_max) from $(basename "$tgz")"
 done < "$plan"
 
+test_kill_at before-pin
+
 # App store pin (after staging, before Start runs occ upgrade).
 NC_CONFIG="${IDEA_NC_CONFIG:-/var/www/html/config/config.php}"
 STATE_DIR="${IDEA_UPDATE_STATE_DIR:-$DST/.idea-update-state}"
@@ -289,7 +367,7 @@ pin_out=$("${IDEA_PHP:-php}" "$PIN" "$NC_CONFIG" "$STATE_DIR/appstoreenabled.sta
 [ -z "$pin_out" ] || printf '%s\n' "$pin_out"
 if [ "$pin_status" -ne 0 ]; then
 	# The Engine keeps the last ERROR: line, so repeat the pin's reason in ours.
-	why=$(printf '%s\n' "$pin_out" | sed -n 's/.*ERROR: //p' | tail -n 1)
+	why=$(printf '%s\n' "$pin_out" | sed -n 's/^[[:space:]]*ERROR: //p' | sed 's/ \[idea-appstore-pin\]$//' | tail -n 1)
 	die "app store pin failed: ${why:-php exited $pin_status}"
 fi
 own "$STATE_DIR"
