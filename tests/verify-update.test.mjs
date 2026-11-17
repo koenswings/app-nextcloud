@@ -7,7 +7,7 @@
  */
 import { it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -205,4 +205,27 @@ it('idea_usage version is matched literally (dots are not wildcards)', () => {
   const r = run({ IDEA_OCC_LIST: appList(RD_VER, fake) })
   assert.equal(r.status, 1, r.stdout + r.stderr)
   assert.match(r.stdout, /idea_usage .+ is not enabled/)
+})
+
+it('test switch: the marker file makes verify fail with exit 1 and an ERROR: line, before any other check', () => {
+  const marker = join(dir, 'data', '.idea-test-fail-verify')
+  mkdirSync(join(dir, 'data'))
+  // Without the marker: a healthy instance passes.
+  let r = run({ IDEA_TEST_FAIL_VERIFY_MARKER: marker })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  writeFileSync(marker, '')
+  r = run({ IDEA_TEST_FAIL_VERIFY_MARKER: marker })
+  assert.equal(r.status, 1, r.stdout + r.stderr)
+  const last = r.stdout.trim().split('\n').pop()
+  assert.equal(last, `ERROR: verify failed (test switch ${marker}) [idea-verify-update]`)
+  // Checked first: even with status.php unreachable the switch message wins.
+  r = run({ IDEA_TEST_FAIL_VERIFY_MARKER: marker, IDEA_CURL_FAIL: '1' })
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /ERROR: verify failed \(test switch /)
+  assert.doesNotMatch(r.stdout, /status\.php unreachable/)
+})
+
+it('test switch: default marker path is the Nextcloud data dir', () => {
+  const src = readFileSync(SCRIPT, 'utf8')
+  assert.match(src, /IDEA_TEST_FAIL_VERIFY_MARKER:-\/var\/www\/html\/data\/\.idea-test-fail-verify/)
 })
