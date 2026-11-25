@@ -2,6 +2,8 @@
 
 Compose file for the Nextcloud App on IDEA App Disks.
 
+Current release: **1.8-31.0.14** (`x-app.version` and git tag). Earlier tags include `1.7-31.0.1` and `1.5-31.0.1`. GitHub also has the demo-pack release `idea-demo-nextcloud-v1` and the kit delivery tag `zimbabwe-2026-10-20`.
+
 ## Default accounts
 
 `admin` / `admin911!`, `teacher1` / `teacher1911!`, `learner1` / `learner1911!` (IDEA `<account name>911!` scheme). See [docs/accounts.md](docs/accounts.md).
