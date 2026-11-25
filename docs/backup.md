@@ -1,6 +1,6 @@
 # Live backup (`x-app.backup` method `hook`, idea#403)
 
-Nextcloud 1.7 is backed up while it runs. The Engine contract is
+Nextcloud is backed up while it runs (current release `1.8-31.0.14`; the hook landed in 1.6, the backup-window healthcheck in 1.7). The Engine contract is
 [agent-engine-dev#404](https://github.com/koenswings/agent-engine-dev/pull/404); the App-author
 contract is `docs/backup-hook.md` in agent-app-dev.
 
